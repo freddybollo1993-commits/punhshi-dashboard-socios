@@ -1,8 +1,9 @@
-import { MovimientoCajaChica, FacturaProveedor, VentaDiaria, ProveedorMaestro } from '@/types';
+import { MovimientoCajaChica, FacturaProveedor, VentaDiaria, ProveedorMaestro, AsignacionFondoCaja, BalanceCajaChica } from '@/types';
 import { 
   CAJA_CHICA_INICIAL, 
   FACTURAS_PROVEEDORES_INICIALES, 
   VENTAS_DIARIAS_INICIALES, 
+  FONDOS_CAJA_CHICA_INICIAL,
   PROVEEDORES_MAESTROS_DEFAULT,
   CATEGORIAS_GASTOS_DEFAULT 
 } from './initialData';
@@ -11,6 +12,7 @@ const KEYS = {
   CAJA_CHICA: 'punhshi_caja_chica_v1',
   PROVEEDORES: 'punhshi_facturas_proveedores_v1',
   VENTAS: 'punhshi_ventas_diarias_v1',
+  FONDOS_CAJA: 'punhshi_fondos_caja_chica_v1',
   MAESTRO_PROVEEDORES: 'punhshi_maestro_proveedores_v1',
   CATEGORIAS: 'punhshi_categorias_v1'
 };
@@ -154,11 +156,78 @@ export function getCategoriasGastos(): string[] {
   }
 }
 
+export function getAsignacionesFondo(): AsignacionFondoCaja[] {
+  if (!isBrowser) return FONDOS_CAJA_CHICA_INICIAL;
+  try {
+    const raw = localStorage.getItem(KEYS.FONDOS_CAJA);
+    if (!raw) {
+      localStorage.setItem(KEYS.FONDOS_CAJA, JSON.stringify(FONDOS_CAJA_CHICA_INICIAL));
+      return FONDOS_CAJA_CHICA_INICIAL;
+    }
+    return JSON.parse(raw);
+  } catch {
+    return FONDOS_CAJA_CHICA_INICIAL;
+  }
+}
+
+export function saveAsignacionesFondo(data: AsignacionFondoCaja[]): void {
+  if (!isBrowser) return;
+  localStorage.setItem(KEYS.FONDOS_CAJA, JSON.stringify(data));
+}
+
+export function addAsignacionFondo(item: Omit<AsignacionFondoCaja, 'id' | 'totalAsignado'>): AsignacionFondoCaja {
+  const current = getAsignacionesFondo();
+  const total = Number(item.tarjeta || 0) + Number(item.efectivo || 0);
+  const newItem: AsignacionFondoCaja = {
+    ...item,
+    id: `fondo-${Date.now()}`,
+    totalAsignado: total
+  };
+  const updated = [newItem, ...current];
+  saveAsignacionesFondo(updated);
+  return newItem;
+}
+
+export function calculateBalanceCajaChica(
+  cajaChica: MovimientoCajaChica[],
+  fondos: AsignacionFondoCaja[],
+  periodoStr?: string
+): BalanceCajaChica {
+  const filterDate = (fechaStr: string) => {
+    if (!periodoStr) return true;
+    return fechaStr.startsWith(periodoStr);
+  };
+
+  const fondosPeriodo = fondos.filter(f => filterDate(f.fecha));
+  const gastosPeriodo = cajaChica.filter(c => filterDate(c.fecha));
+
+  const totalFondosAsignados = fondosPeriodo.reduce((sum, f) => sum + Number(f.totalAsignado || 0), 0);
+  const totalGastosRendidos = gastosPeriodo.reduce((sum, c) => sum + Number(c.importePagado || 0), 0);
+
+  const saldoDisponibleEnCaja = totalFondosAsignados - totalGastosRendidos;
+  const porcentajeConsumido = totalFondosAsignados > 0 
+    ? Math.min(100, (totalGastosRendidos / totalFondosAsignados) * 100) 
+    : 0;
+
+  const estaCuadrado = saldoDisponibleEnCaja >= 0;
+  const diferencia = Math.abs(saldoDisponibleEnCaja);
+
+  return {
+    totalFondosAsignados,
+    totalGastosRendidos,
+    saldoDisponibleEnCaja,
+    porcentajeConsumido,
+    estaCuadrado,
+    diferencia
+  };
+}
+
 export function resetToSeedData(): void {
   if (!isBrowser) return;
   localStorage.setItem(KEYS.CAJA_CHICA, JSON.stringify(CAJA_CHICA_INICIAL));
   localStorage.setItem(KEYS.PROVEEDORES, JSON.stringify(FACTURAS_PROVEEDORES_INICIALES));
   localStorage.setItem(KEYS.VENTAS, JSON.stringify(VENTAS_DIARIAS_INICIALES));
+  localStorage.setItem(KEYS.FONDOS_CAJA, JSON.stringify(FONDOS_CAJA_CHICA_INICIAL));
   localStorage.setItem(KEYS.MAESTRO_PROVEEDORES, JSON.stringify(PROVEEDORES_MAESTROS_DEFAULT));
   localStorage.setItem(KEYS.CATEGORIAS, JSON.stringify(CATEGORIAS_GASTOS_DEFAULT));
 }

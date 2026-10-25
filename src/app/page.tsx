@@ -15,7 +15,8 @@ import {
   ArrowUpRight, 
   PieChart as PieIcon,
   RotateCcw,
-  Plus
+  Plus,
+  Wallet
 } from 'lucide-react';
 
 import { 
@@ -32,7 +33,8 @@ import {
   EMPRESA_PUNHSHI, 
   MovimientoCajaChica, 
   FacturaProveedor, 
-  VentaDiaria 
+  VentaDiaria,
+  AsignacionFondoCaja
 } from '@/types';
 
 import { 
@@ -44,6 +46,9 @@ import {
   addFacturaProveedor, 
   getVentasDiarias, 
   addOrUpdateVentaDiaria, 
+  getAsignacionesFondo,
+  addAsignacionFondo,
+  calculateBalanceCajaChica,
   resetToSeedData 
 } from '@/lib/storage';
 
@@ -53,6 +58,7 @@ import { exportarReporteCompletoExcel } from '@/lib/excelExport';
 
 import OCRScannerModal from '@/components/OCRScannerModal';
 import VentaDiariaModal from '@/components/VentaDiariaModal';
+import AsignacionFondoModal from '@/components/AsignacionFondoModal';
 
 const COLORS = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
 
@@ -63,6 +69,7 @@ export default function DashboardSociosPage() {
   const [cajaChica, setCajaChica] = useState<MovimientoCajaChica[]>([]);
   const [proveedores, setProveedores] = useState<FacturaProveedor[]>([]);
   const [ventas, setVentas] = useState<VentaDiaria[]>([]);
+  const [fondosCaja, setFondosCaja] = useState<AsignacionFondoCaja[]>([]);
   
   // Tab activo
   const [activeTab, setActiveTab] = useState<TabType>('DASHBOARD');
@@ -70,6 +77,7 @@ export default function DashboardSociosPage() {
   // Modales
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false);
   const [isVentaModalOpen, setIsVentaModalOpen] = useState(false);
+  const [isFondoModalOpen, setIsFondoModalOpen] = useState(false);
   
   // Filtros
   const [periodoSeleccionado, setPeriodoSeleccionado] = useState('2025-05');
@@ -85,6 +93,7 @@ export default function DashboardSociosPage() {
     setCajaChica(getCajaChica());
     setProveedores(getFacturasProveedores());
     setVentas(getVentasDiarias());
+    setFondosCaja(getAsignacionesFondo());
   }, []);
 
   if (!mounted) return null;
@@ -92,6 +101,7 @@ export default function DashboardSociosPage() {
   // Cálculos dinámicos
   const resumenFiscal = calculateFiscalSummary(cajaChica, proveedores, ventas, periodoSeleccionado);
   const proyeccion = calculateSalesProjection(ventas, periodoSeleccionado, 45000);
+  const balanceCaja = calculateBalanceCajaChica(cajaChica, fondosCaja, periodoSeleccionado);
 
   // Handlers para guardar nuevos registros
   const handleSaveCajaChica = (item: Omit<MovimientoCajaChica, 'id' | 'numero'>) => {
@@ -107,6 +117,11 @@ export default function DashboardSociosPage() {
   const handleSaveVenta = (item: Omit<VentaDiaria, 'id' | 'totalVenta'>) => {
     addOrUpdateVentaDiaria(item);
     setVentas(getVentasDiarias());
+  };
+
+  const handleSaveFondo = (item: Omit<AsignacionFondoCaja, 'id' | 'totalAsignado'>) => {
+    addAsignacionFondo(item);
+    setFondosCaja(getAsignacionesFondo());
   };
 
   // Toggle estado envío en caja chica
@@ -231,6 +246,14 @@ export default function DashboardSociosPage() {
                 <option value="2025-06" className="bg-slate-900">Junio 2025</option>
               </select>
             </div>
+
+            <button
+              onClick={() => setIsFondoModalOpen(true)}
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs rounded-xl border border-amber-500/30 flex items-center gap-1.5 transition active:scale-95"
+            >
+              <Wallet className="w-4 h-4" />
+              <span>Asignar Fondo Caja</span>
+            </button>
 
             <button
               onClick={() => setIsOCRModalOpen(true)}
@@ -385,6 +408,83 @@ export default function DashboardSociosPage() {
                 </div>
               </div>
 
+            </div>
+
+            {/* Conciliación & Doble Validación de Caja Chica */}
+            <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    <Wallet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      Doble Validación y Conciliación de Caja Chica (Gastos Menores)
+                      <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                        balanceCaja.estaCuadrado 
+                          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' 
+                          : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                      }`}>
+                        {balanceCaja.estaCuadrado ? '✓ Caja Cuadrada' : '⚠️ Exceso de Gastos'}
+                      </span>
+                    </h3>
+                    <p className="text-xs text-slate-400">
+                      Comparativa entre dinero destinado a gastos menores vs comprobantes rendidos de PUNHSHI S.A.C.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setIsFondoModalOpen(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-semibold rounded-lg text-xs flex items-center gap-1.5 border border-slate-700 transition"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Registrar Nueva Asignación
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-950/60 p-4 rounded-xl border border-slate-800 text-xs">
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Total Fondos Destinados:</span>
+                  <span className="text-lg font-black text-amber-300">
+                    S/ {balanceCaja.totalFondosAsignados.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">Asignado para reposición</span>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Total Gastos Rendidos (Comprobantes):</span>
+                  <span className="text-lg font-black text-rose-400">
+                    S/ {balanceCaja.totalGastosRendidos.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">{cajaChica.filter(c => c.fecha.startsWith(periodoSeleccionado)).length} comprobantes registrados</span>
+                </div>
+
+                <div>
+                  <span className="text-slate-400 block mb-0.5">Saldo Restante en Caja (Efectivo disponible):</span>
+                  <span className={`text-lg font-black ${balanceCaja.estaCuadrado ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    S/ {balanceCaja.saldoDisponibleEnCaja.toFixed(2)}
+                  </span>
+                  <span className="text-[10px] text-slate-500 block mt-0.5">
+                    {balanceCaja.estaCuadrado ? 'Dinero físico que debe estar en caja' : 'Diferencia por justificar'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress bar of Petty Cash Consumption */}
+              <div className="mt-4 space-y-1.5">
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">Consumo del fondo de caja chica:</span>
+                  <span className="font-bold text-slate-200">{balanceCaja.porcentajeConsumido.toFixed(1)}% rendido</span>
+                </div>
+                <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden">
+                  <div 
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      balanceCaja.porcentajeConsumido > 95 ? 'bg-rose-500' : 'bg-amber-500'
+                    }`}
+                    style={{ width: `${Math.min(100, balanceCaja.porcentajeConsumido)}%` }}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Middle Section: Chart & Fiscal Balance Breakdown */}
@@ -636,6 +736,39 @@ export default function DashboardSociosPage() {
               </div>
             </div>
 
+            {/* Cuadre y Conciliación de Caja Chica */}
+            <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 flex flex-wrap items-center justify-between gap-4 text-xs">
+              <div className="flex flex-wrap items-center gap-6">
+                <div>
+                  <span className="text-slate-400">Fondos Destinados (Asignados):</span>
+                  <span className="font-bold text-amber-300 ml-1.5">S/ {balanceCaja.totalFondosAsignados.toFixed(2)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Total Gastos Rendidos:</span>
+                  <span className="font-bold text-rose-400 ml-1.5">S/ {balanceCaja.totalGastosRendidos.toFixed(2)}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400">Saldo Restante en Caja:</span>
+                  <span className={`font-extrabold ml-1.5 ${balanceCaja.estaCuadrado ? 'text-emerald-400' : 'text-rose-400'}`}>
+                    S/ {balanceCaja.saldoDisponibleEnCaja.toFixed(2)}
+                  </span>
+                </div>
+                <div>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    balanceCaja.estaCuadrado ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'
+                  }`}>
+                    {balanceCaja.estaCuadrado ? '✓ Caja Cuadrada' : '⚠️ Descuadre'}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsFondoModalOpen(true)}
+                className="text-xs text-amber-400 hover:text-amber-300 font-semibold flex items-center gap-1 hover:underline"
+              >
+                <Plus className="w-3.5 h-3.5" /> Asignar / Reponer Fondo
+              </button>
+            </div>
+
             {/* Table */}
             <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
               <div className="overflow-x-auto">
@@ -882,22 +1015,40 @@ export default function DashboardSociosPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {ventas
-                      .filter(v => v.fecha.startsWith(periodoSeleccionado))
-                      .sort((a, b) => a.fecha.localeCompare(b.fecha))
-                      .map((v) => (
-                        <tr key={v.id} className="hover:bg-slate-800/30 transition">
-                          <td className="py-2.5 px-3 font-semibold text-slate-200">{v.fecha}</td>
-                          <td className="py-2.5 px-3 text-right text-amber-300 font-medium">S/ {Number(v.tarjeta).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-emerald-300 font-medium">S/ {Number(v.efectivo).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-purple-300 font-medium">S/ {Number(v.yapePlin || 0).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-blue-300 font-medium">S/ {Number(v.deliveryApps || 0).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right font-black text-white text-sm">S/ {Number(v.totalVenta).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-400">S/ {Number(v.ventaDeclaradaFactura || 0).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-right text-slate-400">S/ {Number(v.ventaDeclaradaBoleta || 0).toFixed(2)}</td>
-                          <td className="py-2.5 px-3 text-slate-400 text-[11px]">{v.observaciones || '-'}</td>
-                        </tr>
-                      ))}
+                    {ventas.filter(v => v.fecha.startsWith(periodoSeleccionado)).length === 0 ? (
+                      <tr>
+                        <td colSpan={9} className="py-12 text-center text-slate-400">
+                          <DollarSign className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+                          <p className="font-bold text-slate-300 text-sm">No hay registros de ventas para este período ({periodoSeleccionado})</p>
+                          <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+                            Haz clic en el botón &quot;Registrar Día&quot; para ingresar tu primer cierre de caja y calcular las proyecciones mensuales automáticas.
+                          </p>
+                          <button
+                            onClick={() => setIsVentaModalOpen(true)}
+                            className="mt-3 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs inline-flex items-center gap-1.5 transition"
+                          >
+                            <Plus className="w-4 h-4" /> Registrar Primera Venta
+                          </button>
+                        </td>
+                      </tr>
+                    ) : (
+                      ventas
+                        .filter(v => v.fecha.startsWith(periodoSeleccionado))
+                        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+                        .map((v) => (
+                          <tr key={v.id} className="hover:bg-slate-800/30 transition">
+                            <td className="py-2.5 px-3 font-semibold text-slate-200">{v.fecha}</td>
+                            <td className="py-2.5 px-3 text-right text-amber-300 font-medium">S/ {Number(v.tarjeta).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-emerald-300 font-medium">S/ {Number(v.efectivo).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-purple-300 font-medium">S/ {Number(v.yapePlin || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-blue-300 font-medium">S/ {Number(v.deliveryApps || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right font-black text-white text-sm">S/ {Number(v.totalVenta).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-slate-400">S/ {Number(v.ventaDeclaradaFactura || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-right text-slate-400">S/ {Number(v.ventaDeclaradaBoleta || 0).toFixed(2)}</td>
+                            <td className="py-2.5 px-3 text-slate-400 text-[11px]">{v.observaciones || '-'}</td>
+                          </tr>
+                        ))
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -996,6 +1147,12 @@ export default function DashboardSociosPage() {
         isOpen={isVentaModalOpen}
         onClose={() => setIsVentaModalOpen(false)}
         onSaveVenta={handleSaveVenta}
+      />
+
+      <AsignacionFondoModal
+        isOpen={isFondoModalOpen}
+        onClose={() => setIsFondoModalOpen(false)}
+        onSaveFondo={handleSaveFondo}
       />
 
     </div>

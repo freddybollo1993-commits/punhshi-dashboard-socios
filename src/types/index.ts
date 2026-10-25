@@ -93,6 +93,25 @@ export interface ProveedorMaestro {
   bancoDefault?: string;
 }
 
+export interface AsignacionFondoCaja {
+  id: string;
+  fecha: string; // YYYY-MM-DD
+  tarjeta: number; // Fondos asignados por tarjeta/transferencia
+  efectivo: number; // Fondos asignados en efectivo
+  totalAsignado: number; // total tarjeta + efectivo
+  motivo?: string; // e.g. "Apertura de fondo", "Reposición de caja chica"
+  responsable?: string;
+}
+
+export interface BalanceCajaChica {
+  totalFondosAsignados: number;
+  totalGastosRendidos: number;
+  saldoDisponibleEnCaja: number;
+  porcentajeConsumido: number;
+  estaCuadrado: boolean;
+  diferencia: number;
+}
+
 export interface ResumenFiscalMes {
   mes: string;
   year: number;

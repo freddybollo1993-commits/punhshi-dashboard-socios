@@ -1,4 +1,4 @@
-import { MovimientoCajaChica, FacturaProveedor, VentaDiaria, ProveedorMaestro } from '@/types';
+import { MovimientoCajaChica, FacturaProveedor, VentaDiaria, ProveedorMaestro, AsignacionFondoCaja } from '@/types';
 
 export const CATEGORIAS_GASTOS_DEFAULT: string[] = [
   'Alimentación de personal',
@@ -544,16 +544,18 @@ export const FACTURAS_PROVEEDORES_INICIALES: FacturaProveedor[] = [
   }
 ];
 
-// Ventas Diarias iniciales (formato de S/ 1,000 diario que el usuario adjuntó en su Excel)
-export const VENTAS_DIARIAS_INICIALES: VentaDiaria[] = [
-  { id: 'v-1', fecha: '2025-05-01', tarjeta: 620.00, efectivo: 380.00, yapePlin: 120.00, deliveryApps: 80.00, totalVenta: 1200.00, ventaDeclaradaFactura: 450.00, ventaDeclaradaBoleta: 650.00, observaciones: 'Feriado 1 de Mayo' },
-  { id: 'v-2', fecha: '2025-05-02', tarjeta: 580.00, efectivo: 420.00, yapePlin: 150.00, deliveryApps: 50.00, totalVenta: 1200.00, ventaDeclaradaFactura: 320.00, ventaDeclaradaBoleta: 780.00 },
-  { id: 'v-3', fecha: '2025-05-03', tarjeta: 950.00, efectivo: 650.00, yapePlin: 200.00, deliveryApps: 100.00, totalVenta: 1900.00, ventaDeclaradaFactura: 600.00, ventaDeclaradaBoleta: 1150.00, observaciones: 'Sábado alto flujo' },
-  { id: 'v-4', fecha: '2025-05-04', tarjeta: 890.00, efectivo: 710.00, yapePlin: 180.00, deliveryApps: 120.00, totalVenta: 1900.00, ventaDeclaradaFactura: 580.00, ventaDeclaradaBoleta: 1100.00, observaciones: 'Domingo familiar' },
-  { id: 'v-5', fecha: '2025-05-05', tarjeta: 500.00, efectivo: 500.00, yapePlin: 80.00, deliveryApps: 20.00, totalVenta: 1100.00, ventaDeclaradaFactura: 280.00, ventaDeclaradaBoleta: 720.00 },
-  { id: 'v-6', fecha: '2025-05-06', tarjeta: 520.00, efectivo: 480.00, yapePlin: 90.00, deliveryApps: 30.00, totalVenta: 1120.00, ventaDeclaradaFactura: 310.00, ventaDeclaradaBoleta: 700.00 },
-  { id: 'v-7', fecha: '2025-05-07', tarjeta: 540.00, efectivo: 460.00, yapePlin: 85.00, deliveryApps: 25.00, totalVenta: 1110.00, ventaDeclaradaFactura: 300.00, ventaDeclaradaBoleta: 710.00 },
-  { id: 'v-8', fecha: '2025-05-08', tarjeta: 560.00, efectivo: 440.00, yapePlin: 95.00, deliveryApps: 35.00, totalVenta: 1130.00, ventaDeclaradaFactura: 340.00, ventaDeclaradaBoleta: 690.00 },
-  { id: 'v-9', fecha: '2025-05-09', tarjeta: 820.00, efectivo: 580.00, yapePlin: 160.00, deliveryApps: 80.00, totalVenta: 1640.00, ventaDeclaradaFactura: 520.00, ventaDeclaradaBoleta: 980.00, observaciones: 'Viernes noche' },
-  { id: 'v-10', fecha: '2025-05-10', tarjeta: 1050.00, efectivo: 750.00, yapePlin: 220.00, deliveryApps: 110.00, totalVenta: 2130.00, ventaDeclaradaFactura: 710.00, ventaDeclaradaBoleta: 1240.00, observaciones: 'Sábado Víspera Día de la Madre' }
+// Fondos destinados para gastos menores de Caja Chica (Asignaciones y Reposiciones para doble validación y cuadre)
+export const FONDOS_CAJA_CHICA_INICIAL: AsignacionFondoCaja[] = [
+  {
+    id: 'fondo-1',
+    fecha: '2025-04-30',
+    tarjeta: 0.00,
+    efectivo: 1000.00,
+    totalAsignado: 1000.00,
+    motivo: 'Fondo Asignado de Apertura / Reposición Caja Chica',
+    responsable: 'Administración PUNHSHI S.A.C.'
+  }
 ];
+
+// Ventas Diarias iniciales (vacío para que el usuario registre sus ventas reales día a día)
+export const VENTAS_DIARIAS_INICIALES: VentaDiaria[] = [];
