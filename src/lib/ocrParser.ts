@@ -18,20 +18,20 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
   const text = rawText.toUpperCase();
   const advertencias: string[] = [];
 
-  // 1. Detectar RUC (11 dígitos, comienza con 10 o 20)
+  // 1. Detectar RUC (11 dígitos, comienza con 10 o 20) o DNI (8 dígitos)
   const rucMatch = text.match(/\b(10\d{9}|20\d{9})\b/);
   const rucEmisor = rucMatch ? rucMatch[1] : '';
 
   // 2. Tipo de Comprobante
-  let tipoComprobante: OCRParsedResult['tipoComprobante'] = 'FACTURA';
-  let esDeducibleIGV = true;
+  let tipoComprobante: OCRParsedResult['tipoComprobante'] = 'BOLETA';
+  let esDeducibleIGV = false;
 
-  if (text.includes('FACTURA') || text.includes('FACTURA ELECTR')) {
+  if (text.includes('FACTURA') || text.includes('FACTURA ELECTR') || /[F][A-Z0-9]{3}[-\s]\d+/.test(text)) {
     tipoComprobante = 'FACTURA';
     esDeducibleIGV = true;
-  } else if (text.includes('BOLETA') || text.includes('BOLETA DE VENTA')) {
+  } else if (text.includes('BOLETA') || text.includes('BOLETA DE VENTA') || /[B][A-Z0-9]{3}[-\s]\d+/.test(text)) {
     tipoComprobante = 'BOLETA';
-    esDeducibleIGV = false; // Sin RUC receptor no da crédito fiscal
+    esDeducibleIGV = false; // Sin RUC receptor no da crédito fiscal en régimen general
   } else if (text.includes('GUIA') || text.includes('GUÍA') || text.includes('REMISIÓN')) {
     tipoComprobante = 'GUIA';
     esDeducibleIGV = false;
@@ -42,23 +42,17 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
     tipoComprobante = 'RECIBO';
     esDeducibleIGV = false;
   } else {
-    // Si tiene serie tipo F001 o FW01 es factura
-    if (/[F][A-Z0-9]{3}[-\s]\d+/.test(text)) {
-      tipoComprobante = 'FACTURA';
-      esDeducibleIGV = true;
-    } else {
-      tipoComprobante = 'OTRO';
-      esDeducibleIGV = false;
-    }
+    tipoComprobante = 'BOLETA';
+    esDeducibleIGV = false;
   }
 
-  // 3. Número de Comprobante (Serie - Correlativo e.g. FW01-00000579 o F001-12345)
+  // 3. Número de Comprobante (Serie - Correlativo e.g. B001-00012345 o F001-12345 o N°003105)
   let numeroComprobante = 'S/N';
-  const serieMatch = text.match(/([A-Z0-9]{4}[-\s]\d{4,8})/);
+  const serieMatch = text.match(/([BFE][A-Z0-9]{3}[-\s]\d{3,8})/i) || text.match(/([A-Z0-9]{4}[-\s]\d{3,8})/);
   if (serieMatch) {
-    numeroComprobante = serieMatch[1].replace(' ', '-');
+    numeroComprobante = serieMatch[1].replace(/\s+/g, '-').toUpperCase();
   } else {
-    const numMatch = text.match(/N[°º\.]?\s*(\d+)/);
+    const numMatch = text.match(/N[°º\.]?\s*(\d+)/i) || text.match(/NRO\s*[:\.]?\s*(\d+)/i);
     if (numMatch) {
       numeroComprobante = `N°${numMatch[1]}`;
     }
@@ -78,32 +72,40 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
   }
 
   // 5. Montos (Total, Base, IGV)
-  // Busca patrones como TOTAL 120.50, IMPORTE TOTAL: S/ 45.00, etc.
-  const amounts = text.match(/(?:S\/|S\/\.|\$)?\s*([0-9]+[,\.][0-9]{2})/g) || [];
-  const parsedNumbers = amounts
-    .map(a => parseFloat(a.replace(/[^0-9\.]/g, '').replace(',', '.')))
-    .filter(n => !isNaN(n) && n > 0 && n < 100000);
-
   let importeTotal = 0;
-  if (parsedNumbers.length > 0) {
-    // Frecuentemente el total es el número más alto en el comprobante
-    importeTotal = Math.max(...parsedNumbers);
+  
+  // Buscar específicamente la línea de TOTAL / IMPORTE TOTAL
+  const totalLineMatch = text.match(/(?:TOTAL|IMPORTE\s*TOTAL|TOTAL\s*A\s*PAGAR|IMPORTE)\s*[:=\s]*S?\/?\.?\s*([0-9]+[,\.][0-9]{2})/i);
+  if (totalLineMatch) {
+    importeTotal = parseFloat(totalLineMatch[1].replace(',', '.'));
+  }
+
+  if (importeTotal <= 0) {
+    // Si no encontró etiqueta explícita, extraer importes monetarios detectados
+    const amounts = text.match(/(?:S\/|S\/\.|\$)?\s*([0-9]+[,\.][0-9]{2})/g) || [];
+    const parsedNumbers = amounts
+      .map(a => parseFloat(a.replace(/[^0-9\.]/g, '').replace(',', '.')))
+      .filter(n => !isNaN(n) && n > 0 && n < 100000);
+
+    if (parsedNumbers.length > 0) {
+      importeTotal = Math.max(...parsedNumbers);
+    }
   }
 
   let baseImponible = 0;
   let montoIGV = 0;
 
   if (esDeducibleIGV && importeTotal > 0) {
-    baseImponible = parseFloat((importeTotal / 1.18).toFixed(2));
+    baseImponible = parseFloat((importeTotal / 1.105).toFixed(2));
     montoIGV = parseFloat((importeTotal - baseImponible).toFixed(2));
   } else {
     baseImponible = importeTotal;
     montoIGV = 0;
   }
 
-  // 6. Detección de Proveedor conocido
+  // 6. Detección de Proveedor (Si no es de la lista maestra, extraer el nombre en el encabezado del ticket)
   let razonSocialEmisor = '';
-  let detalleSugerido = 'Compras operativas';
+  let detalleSugerido = 'Consumo de restaurante / compras varias';
   let tipoGastoSugerido = 'Insumos de cocina (verduras, condimentos palta)';
 
   if (text.includes('RIVERA')) {
@@ -117,7 +119,7 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
   } else if (text.includes('INDRIVE') || text.includes('INDRIVER')) {
     razonSocialEmisor = 'INDRIVE';
     tipoGastoSugerido = 'Movilidades';
-    detalleSugerido = 'Movilidad y envíos de emergencia';
+    detalleSugerido = 'Movilidad y envíos';
     tipoComprobante = 'GUIA';
     esDeducibleIGV = false;
   } else if (text.includes('MAKRO')) {
@@ -132,19 +134,42 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
     razonSocialEmisor = 'PACHAFLAMA';
     tipoGastoSugerido = 'Insumos de cocina (verduras, condimentos palta)';
     detalleSugerido = 'Gas Butano / Flameadores';
+  } else {
+    // Proveedor NO registrado previamente: extraer la primera línea con nombre de tienda o negocio
+    const lines = rawText.split('\n')
+      .map(l => l.trim())
+      .filter(l => l.length >= 3 && l.length <= 60);
+
+    const ignoreWords = ['BOLETA', 'FACTURA', 'ELECTR', 'R.U.C', 'RUC', 'TICKET', 'FECHA', 'HORA', 'DIRECCION', 'CLIENTE', 'DNI', 'CANT', 'PRECIO'];
+    const candidate = lines.find(line => {
+      const u = line.toUpperCase();
+      return !ignoreWords.some(w => u.includes(w)) && !/^\d+$/.test(line);
+    });
+
+    if (candidate) {
+      razonSocialEmisor = candidate.toUpperCase();
+    } else {
+      razonSocialEmisor = 'PROVEEDOR VARIOS';
+    }
+
+    if (tipoComprobante === 'BOLETA') {
+      tipoGastoSugerido = 'Alimentación de personal';
+      detalleSugerido = 'Consumo / compra menor con boleta';
+    }
   }
 
-  // Confianza estimada
-  let confianza = 40;
+  // 7. Confianza estimada
+  let confianza = 35;
   if (rucEmisor) confianza += 25;
-  if (numeroComprobante !== 'S/N') confianza += 15;
+  if (numeroComprobante !== 'S/N') confianza += 20;
   if (importeTotal > 0) confianza += 20;
 
-  if (esDeducibleIGV && !rucEmisor) {
-    advertencias.push('Se detectó Factura pero no se pudo leer el RUC con claridad.');
+  if (tipoComprobante === 'BOLETA') {
+    advertencias.push('Comprobante tipo Boleta de Venta: Registra salida real de dinero de caja sin generar crédito fiscal de IGV.');
   }
+
   if (importeTotal === 0) {
-    advertencias.push('No se detectó el importe total automáticamente. Ingrésalo manualmente.');
+    advertencias.push('No se pudo identificar con certeza el monto total. Por favor verifica o digita el importe.');
   }
 
   return {

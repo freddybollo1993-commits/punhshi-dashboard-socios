@@ -94,8 +94,20 @@ export default function OCRScannerModal({
 
     try {
       const { createWorker } = await import('tesseract.js');
-      const worker = await createWorker('spa');
-      setProgresoOCR('Leyendo datos del comprobante...');
+      const worker = await createWorker('spa', 1, {
+        logger: (m: { status?: string; progress?: number }) => {
+          if (m.status === 'loading tesseract core') {
+            setProgresoOCR('Iniciando motor de visión...');
+          } else if (m.status === 'loading language traineddata') {
+            const pct = Math.round((m.progress || 0) * 100);
+            setProgresoOCR(`Cargando modelo de reconocimiento (${pct}%)...`);
+          } else if (m.status === 'recognizing text') {
+            const pct = Math.round((m.progress || 0) * 100);
+            setProgresoOCR(`Analizando datos del comprobante (${pct}%)...`);
+          }
+        }
+      });
+      setProgresoOCR('Extrayendo campos del comprobante...');
       const ret = await worker.recognize(file);
       await worker.terminate();
 
