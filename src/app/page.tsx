@@ -12,11 +12,11 @@ import {
   Calendar, 
   Download, 
   ShieldCheck, 
-  ArrowUpRight, 
   PieChart as PieIcon,
   RotateCcw,
   Plus,
-  Wallet
+  Wallet,
+  Settings
 } from 'lucide-react';
 
 import { 
@@ -34,7 +34,9 @@ import {
   MovimientoCajaChica, 
   FacturaProveedor, 
   VentaDiaria,
-  AsignacionFondoCaja
+  AsignacionFondoCaja,
+  ConfiguracionFinanciera,
+  GastoEstructural
 } from '@/types';
 
 import { 
@@ -49,6 +51,8 @@ import {
   getAsignacionesFondo,
   addAsignacionFondo,
   calculateBalanceCajaChica,
+  getConfiguracion,
+  getGastosEstructurales,
   resetToSeedData 
 } from '@/lib/storage';
 
@@ -59,10 +63,11 @@ import { exportarReporteCompletoExcel } from '@/lib/excelExport';
 import OCRScannerModal from '@/components/OCRScannerModal';
 import VentaDiariaModal from '@/components/VentaDiariaModal';
 import AsignacionFondoModal from '@/components/AsignacionFondoModal';
+import ConfiguracionView from '@/components/ConfiguracionView';
 
 const COLORS = ['#f59e0b', '#10b981', '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4'];
 
-type TabType = 'DASHBOARD' | 'CAJA_CHICA' | 'PROVEEDORES' | 'VENTAS' | 'REPORTES';
+type TabType = 'DASHBOARD' | 'CAJA_CHICA' | 'PROVEEDORES' | 'VENTAS' | 'REPORTES' | 'CONFIGURACION';
 
 export default function DashboardSociosPage() {
   const [mounted, setMounted] = useState(false);
@@ -70,6 +75,8 @@ export default function DashboardSociosPage() {
   const [proveedores, setProveedores] = useState<FacturaProveedor[]>([]);
   const [ventas, setVentas] = useState<VentaDiaria[]>([]);
   const [fondosCaja, setFondosCaja] = useState<AsignacionFondoCaja[]>([]);
+  const [config, setConfig] = useState<ConfiguracionFinanciera>(getConfiguracion());
+  const [gastosEstructurales, setGastosEstructurales] = useState<GastoEstructural[]>([]);
   
   // Tab activo
   const [activeTab, setActiveTab] = useState<TabType>('DASHBOARD');
@@ -94,12 +101,21 @@ export default function DashboardSociosPage() {
     setProveedores(getFacturasProveedores());
     setVentas(getVentasDiarias());
     setFondosCaja(getAsignacionesFondo());
+    setConfig(getConfiguracion());
+    setGastosEstructurales(getGastosEstructurales());
   }, []);
 
   if (!mounted) return null;
 
-  // Cálculos dinámicos
-  const resumenFiscal = calculateFiscalSummary(cajaChica, proveedores, ventas, periodoSeleccionado);
+  // Cálculos dinámicos con tasas configurables y gastos estructurales
+  const resumenFiscal = calculateFiscalSummary(
+    cajaChica, 
+    proveedores, 
+    ventas, 
+    periodoSeleccionado, 
+    config, 
+    gastosEstructurales
+  );
   const proyeccion = calculateSalesProjection(ventas, periodoSeleccionado, 45000);
   const balanceCaja = calculateBalanceCajaChica(cajaChica, fondosCaja, periodoSeleccionado);
 
@@ -122,6 +138,15 @@ export default function DashboardSociosPage() {
   const handleSaveFondo = (item: Omit<AsignacionFondoCaja, 'id' | 'totalAsignado'>) => {
     addAsignacionFondo(item);
     setFondosCaja(getAsignacionesFondo());
+  };
+
+  const handleLimpiarTodo = () => {
+    resetToSeedData();
+    setCajaChica([]);
+    setProveedores([]);
+    setVentas([]);
+    setFondosCaja([]);
+    setGastosEstructurales([]);
   };
 
   // Toggle estado envío en caja chica
@@ -154,16 +179,6 @@ export default function DashboardSociosPage() {
     });
     saveFacturasProveedores(updated);
     setProveedores(updated);
-  };
-
-  // Reset demo data
-  const handleResetDemo = () => {
-    if (confirm('¿Restablecer datos originales del Excel de PUNHSHI S.A.C.?')) {
-      resetToSeedData();
-      setCajaChica(getCajaChica());
-      setProveedores(getFacturasProveedores());
-      setVentas(getVentasDiarias());
-    }
   };
 
   // Datos para gráficos de ventas y proyección
@@ -272,7 +287,15 @@ export default function DashboardSociosPage() {
             </button>
 
             <button
-              onClick={() => exportarReporteCompletoExcel(cajaChica, proveedores, ventas, resumenFiscal, proyeccion)}
+              onClick={() => exportarReporteCompletoExcel(
+                cajaChica, 
+                proveedores, 
+                ventas, 
+                resumenFiscal, 
+                proyeccion,
+                config,
+                gastosEstructurales
+              )}
               className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-xl border border-slate-700 transition"
               title="Descargar Reporte Excel Completo (.xlsx)"
             >
@@ -289,7 +312,8 @@ export default function DashboardSociosPage() {
             { id: 'CAJA_CHICA', label: '💵 Control Caja Chica', icon: Receipt },
             { id: 'PROVEEDORES', label: '🏢 Proveedores (CxP)', icon: Building2 },
             { id: 'VENTAS', label: '📈 Ventas & Proyección', icon: DollarSign },
-            { id: 'REPORTES', label: '📑 Exportación Excel', icon: FileSpreadsheet }
+            { id: 'REPORTES', label: '📑 Exportación Excel', icon: FileSpreadsheet },
+            { id: 'CONFIGURACION', label: '⚙️ Configuración & Gastos Fijos', icon: Settings }
           ].map((tab) => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -323,23 +347,22 @@ export default function DashboardSociosPage() {
             {/* Top 4 Primary KPIs */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               
-              {/* Card 1: Ventas del Mes */}
+              {/* Card 1: Ventas Líquidas Netas */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Ventas Reales Acumuladas
+                    Ventas Líquidas Netas
                   </span>
                   <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400">
                     <DollarSign className="w-4 h-4" />
                   </div>
                 </div>
                 <div className="text-2xl font-black text-white tracking-tight">
-                  S/ {resumenFiscal.totalVentasReales.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                  S/ {resumenFiscal.totalVentasLiquidas.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                 </div>
-                <div className="mt-2 text-xs flex items-center gap-1.5 text-emerald-400">
-                  <ArrowUpRight className="w-3.5 h-3.5" />
-                  <span>{proyeccion.diasTranscurridos} días registrados</span>
-                  <span className="text-slate-400 ml-auto">Meta: S/ {proyeccion.metaMes?.toLocaleString()}</span>
+                <div className="mt-2 text-xs flex items-center justify-between text-slate-400">
+                  <span>Bruta: S/ {resumenFiscal.totalVentasReales.toFixed(2)}</span>
+                  <span className="text-rose-400 font-medium">Comis: -S/ {resumenFiscal.totalComisionesDescontadas.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -364,25 +387,25 @@ export default function DashboardSociosPage() {
                 </div>
               </div>
 
-              {/* Card 3: Utilidad Operativa Real */}
+              {/* Card 3: Utilidad Neta Real */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Utilidad Operativa Real
+                    Utilidad Neta del Socio
                   </span>
                   <div className="p-2 rounded-xl bg-blue-500/10 text-blue-400">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                 </div>
                 <div className={`text-2xl font-black tracking-tight ${
-                  resumenFiscal.utilidadOperativaReal >= 0 ? 'text-emerald-400' : 'text-rose-400'
+                  resumenFiscal.utilidadNetaFinal >= 0 ? 'text-emerald-400' : 'text-rose-400'
                 }`}>
-                  S/ {resumenFiscal.utilidadOperativaReal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
+                  S/ {resumenFiscal.utilidadNetaFinal.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="mt-2 text-xs flex items-center justify-between text-slate-400">
-                  <span>Margen Operativo:</span>
+                  <span>Fijos/Var: S/ {resumenFiscal.totalGastosEstructurales.toFixed(2)}</span>
                   <span className="font-bold text-slate-200">
-                    {resumenFiscal.margenOperativoReal.toFixed(1)}%
+                    {resumenFiscal.margenOperativoReal.toFixed(1)}% margen
                   </span>
                 </div>
               </div>
@@ -391,7 +414,7 @@ export default function DashboardSociosPage() {
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Impuestos SUNAT Estimados
+                    Impuestos SUNAT ({config.tasaIGV}% IGV)
                   </span>
                   <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
                     <Receipt className="w-4 h-4" />
@@ -1104,6 +1127,8 @@ export default function DashboardSociosPage() {
                     ventas.filter(v => v.fecha >= fechaInicioReporte && v.fecha <= fechaFinReporte),
                     resumenFiscal,
                     proyeccion,
+                    config,
+                    gastosEstructurales,
                     `Reporte_PUNHSHI_SAC_${fechaInicioReporte}_al_${fechaFinReporte}.xlsx`
                   )}
                   className="px-6 py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-sm rounded-xl shadow-lg shadow-emerald-500/20 inline-flex items-center gap-2 transition"
@@ -1117,15 +1142,28 @@ export default function DashboardSociosPage() {
             {/* Quick Demo Data Reset Option */}
             <div className="text-center">
               <button
-                onClick={handleResetDemo}
+                onClick={handleLimpiarTodo}
                 className="text-xs text-slate-500 hover:text-slate-400 flex items-center gap-1.5 mx-auto"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
-                Restablecer datos originales del Excel de PUNHSHI S.A.C.
+                Limpiar todas las tablas y dejar en blanco
               </button>
             </div>
 
           </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 6: CONFIGURACIÓN & GASTOS FIJOS / VARIABLES          */}
+        {/* ======================================================== */}
+        {activeTab === 'CONFIGURACION' && (
+          <ConfiguracionView
+            config={config}
+            gastosEstructurales={gastosEstructurales}
+            onConfigUpdated={(newCfg) => setConfig(newCfg)}
+            onGastosUpdated={(newGastos) => setGastosEstructurales(newGastos)}
+            onLimpiarDatos={handleLimpiarTodo}
+          />
         )}
 
       </main>

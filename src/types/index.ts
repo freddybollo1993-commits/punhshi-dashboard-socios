@@ -73,14 +73,44 @@ export interface FacturaProveedor {
   fotoUrl?: string;
 }
 
+export interface ConfiguracionFinanciera {
+  tasaIGV: number; // Por defecto 10.5% (Ley de Restaurantes y Turismo) o 18% general
+  comisionPOS: number; // % comisión cobrada por Niubiz/Izipay (ej: 3.5%)
+  comisionRappi: number; // % comisión Rappi (ej: 18%)
+  comisionPedidosYa: number; // % comisión PedidosYa (ej: 18%)
+  comisionDidi: number; // % comisión DiDi Food (ej: 15%)
+  tasaPagoCuentaRenta: number; // % pago a cuenta de renta mensual (ej: 1.5%)
+}
+
+export type TipoGastoEstructural = 'FIJO' | 'VARIABLE';
+export type FrecuenciaGastoEstructural = 'MENSUAL' | 'QUINCENAL' | 'ANUAL' | 'UNICO';
+
+export interface GastoEstructural {
+  id: string;
+  nombre: string; // Ej: Alquiler de local, Planilla administrativa, Asesor contable
+  categoria: string;
+  tipo: TipoGastoEstructural;
+  frecuencia: FrecuenciaGastoEstructural;
+  monto: number;
+  esDeducibleIGV: boolean;
+  diaVencimiento?: number; // Día del mes (1 a 31)
+  activo: boolean;
+  observaciones?: string;
+}
+
 export interface VentaDiaria {
   id: string;
   fecha: string; // YYYY-MM-DD
   tarjeta: number;      // Niubiz / POS
   efectivo: number;     // Efectivo en caja
   yapePlin?: number;    // Billeteras digitales
-  deliveryApps?: number;// Rappi / PedidosYa
-  totalVenta: number;   // Calculado
+  rappi?: number;       // Venta por Rappi
+  pedidosYa?: number;   // Venta por PedidosYa
+  didi?: number;        // Venta por DiDi Food
+  deliveryApps?: number;// Total delivery (o apps varios)
+  totalVenta: number;   // Total Venta Bruta
+  totalComisionesDescontadas?: number; // Suma de comisiones de POS, Rappi, PedidosYa, DiDi
+  totalVentaLiquida?: number; // Venta Bruta - Comisiones de pasarela/apps
   ventaDeclaradaFactura: number; // Emitida a clientes
   ventaDeclaradaBoleta: number;  // Emitida a clientes
   observaciones?: string;
@@ -115,10 +145,12 @@ export interface BalanceCajaChica {
 export interface ResumenFiscalMes {
   mes: string;
   year: number;
-  // Ventas
-  totalVentasReales: number;
+  // Ventas Brutas vs Líquidas (Comisiones de pasarelas y delivery)
+  totalVentasReales: number; // Venta Bruta
+  totalComisionesDescontadas: number; // Descuento de POS, Rappi, PedidosYa, Didi
+  totalVentasLiquidas: number; // Venta Líquida que ingresa al negocio
   totalVentasDeclaradas: number;
-  igvDebitoFiscal: number; // Impuesto de ventas
+  igvDebitoFiscal: number; // Impuesto de ventas según tasa configurada
   // Compras con Factura (Crédito Fiscal)
   comprasFacturaProveedores: number;
   igvCreditoProveedores: number;
@@ -128,13 +160,16 @@ export interface ResumenFiscalMes {
   // Balance SUNAT
   igvEstimadoAPagar: number;
   saldoAFavorIGV: number;
-  pagoCuentaRentaEstimado: number; // 1.5% o 1%
+  pagoCuentaRentaEstimado: number; // 1.5% o tasa configurada
   totalImpuestosEstimados: number;
   // Gastos no deducibles (Notas de venta, guías, etc.)
   gastosSinCreditoFiscal: number;
-  // Flujo real de caja
+  // Flujo real de caja y compromisos estructurales
+  totalEgresosCajaYProveedores: number;
+  totalGastosEstructurales: number; // Fijos y Variables fuera de control cotidiano
   totalEgresosReales: number;
   utilidadOperativaReal: number;
+  utilidadNetaFinal: number; // Ventas Líquidas - Egresos Totales
   margenOperativoReal: number; // Porcentaje
   ratioEscudoFiscal: number;   // % de compras formales vs ventas
 }

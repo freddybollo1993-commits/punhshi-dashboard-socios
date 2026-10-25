@@ -1,6 +1,15 @@
 import * as XLSX from 'xlsx';
-import { MovimientoCajaChica, FacturaProveedor, VentaDiaria, ResumenFiscalMes, ProyeccionVentas } from '@/types';
+import { 
+  MovimientoCajaChica, 
+  FacturaProveedor, 
+  VentaDiaria, 
+  ResumenFiscalMes, 
+  ProyeccionVentas,
+  GastoEstructural,
+  ConfiguracionFinanciera
+} from '@/types';
 import { EMPRESA_PUNHSHI } from '@/types';
+import { CONFIGURACION_DEFAULT } from './initialData';
 
 export function exportarReporteCompletoExcel(
   cajaChica: MovimientoCajaChica[],
@@ -8,6 +17,8 @@ export function exportarReporteCompletoExcel(
   ventas: VentaDiaria[],
   resumenFiscal: ResumenFiscalMes,
   proyeccion: ProyeccionVentas,
+  config: ConfiguracionFinanciera = CONFIGURACION_DEFAULT,
+  gastosEstructurales: GastoEstructural[] = [],
   nombreArchivo: string = `Reporte_PUNHSHI_SAC_${new Date().toISOString().slice(0, 10)}.xlsx`
 ): void {
   const wb = XLSX.utils.book_new();
@@ -20,12 +31,20 @@ export function exportarReporteCompletoExcel(
     ['Razón Social:', EMPRESA_PUNHSHI.razonSocial],
     ['RUC:', EMPRESA_PUNHSHI.ruc],
     ['Régimen Tributario:', EMPRESA_PUNHSHI.regimenTributario],
+    ['Tasa IGV Aplicada:', `${config.tasaIGV}%`],
     ['Fecha de Generación:', new Date().toLocaleDateString('es-PE')],
     [],
     ['INDICADORES CLAVE DEL SOCIO', 'VALOR (S/)'],
-    ['Ventas Reales Totales (Flujo de Caja)', resumenFiscal.totalVentasReales.toFixed(2)],
-    ['Gastos Totales de Operación (Proveedores + Caja Chica)', resumenFiscal.totalEgresosReales.toFixed(2)],
-    ['Utilidad Operativa Real', resumenFiscal.utilidadOperativaReal.toFixed(2)],
+    ['Ventas Brutas Totales', resumenFiscal.totalVentasReales.toFixed(2)],
+    ['(-) Comisiones Descontadas (POS, Rappi, PedidosYa, DiDi)', `-${resumenFiscal.totalComisionesDescontadas.toFixed(2)}`],
+    ['(=) Ventas Líquidas Netas Reales', resumenFiscal.totalVentasLiquidas.toFixed(2)],
+    [],
+    ['EGRESOS TOTALES DEL NEGOCIO', 'VALOR (S/)'],
+    ['Gastos de Caja Chica (Gastos Menores)', cajaChica.reduce((a, b) => a + Number(b.importePagado || 0), 0).toFixed(2)],
+    ['Facturas a Proveedores (Cuentas por Pagar)', facturasProveedores.reduce((a, b) => a + Number(b.total || 0), 0).toFixed(2)],
+    ['Gastos Estructurales (Fijos y Variables)', resumenFiscal.totalGastosEstructurales.toFixed(2)],
+    ['TOTAL EGRESOS CONSOLIDADOS', resumenFiscal.totalEgresosReales.toFixed(2)],
+    ['UTILIDAD NETA REAL DEL SOCIO', resumenFiscal.utilidadNetaFinal.toFixed(2)],
     ['Margen Operativo Real (%)', `${resumenFiscal.margenOperativoReal.toFixed(1)}%`],
     [],
     ['PROYECCIÓN DE CIERRE DE VENTAS DEL MES', 'VALOR'],
@@ -38,7 +57,7 @@ export function exportarReporteCompletoExcel(
     [],
     ['POSICIÓN FISCAL SUNAT (ESTIMADA)', 'MONTO (S/)'],
     ['Ventas Declaradas (Facturas + Boletas)', resumenFiscal.totalVentasDeclaradas.toFixed(2)],
-    ['Débito Fiscal IGV (18% Ventas)', resumenFiscal.igvDebitoFiscal.toFixed(2)],
+    [`Débito Fiscal IGV (${config.tasaIGV}%)`, resumenFiscal.igvDebitoFiscal.toFixed(2)],
     ['Compras con Factura - Proveedores (Base Imponible)', resumenFiscal.comprasFacturaProveedores.toFixed(2)],
     ['Crédito Fiscal IGV - Proveedores', resumenFiscal.igvCreditoProveedores.toFixed(2)],
     ['Compras con Factura - Caja Chica (Base Imponible)', resumenFiscal.comprasFacturaCajaChica.toFixed(2)],
@@ -46,14 +65,14 @@ export function exportarReporteCompletoExcel(
     ['TOTAL CRÉDITO FISCAL ACUMULADO (IGV)', resumenFiscal.totalCreditoFiscalIGV.toFixed(2)],
     ['IGV ESTIMADO A PAGAR A SUNAT', resumenFiscal.igvEstimadoAPagar.toFixed(2)],
     ['Saldo a Favor IGV (si aplica)', resumenFiscal.saldoAFavorIGV.toFixed(2)],
-    ['Pago a Cuenta de Impuesto a la Renta Estimado (1.5%)', resumenFiscal.pagoCuentaRentaEstimado.toFixed(2)],
+    [`Pago a Cuenta de Renta Estimado (${config.tasaPagoCuentaRenta}%)`, resumenFiscal.pagoCuentaRentaEstimado.toFixed(2)],
     ['TOTAL IMPUESTOS ESTIMADOS SUNAT', resumenFiscal.totalImpuestosEstimados.toFixed(2)],
     ['Gastos no deducibles (Notas de venta, boletas, guías)', resumenFiscal.gastosSinCreditoFiscal.toFixed(2)],
     ['Ratio de Escudo Fiscal (Compras con Factura vs Ventas)', `${resumenFiscal.ratioEscudoFiscal.toFixed(1)}%`]
   ];
 
   const wsResumen = XLSX.utils.aoa_to_sheet(dataResumen);
-  wsResumen['!cols'] = [{ wch: 45 }, { wch: 25 }];
+  wsResumen['!cols'] = [{ wch: 48 }, { wch: 25 }];
   XLSX.utils.book_append_sheet(wb, wsResumen, 'Resumen Socio & SUNAT');
 
   // ==========================================
@@ -109,7 +128,7 @@ export function exportarReporteCompletoExcel(
   const headersProv = [
     'N°', 'Fecha', 'Tipo de Documento', 'Número de Documento', 'Envío de Documentos',
     'RUC', 'Razón Social', 'Concepto o descripción del gasto', 'TIPO DE GASTOS',
-    'Moneda', 'Valor de Venta', 'IGV (18%)', 'Exonerado', 'Otros', 'TOTAL (S/)',
+    'Moneda', 'Valor de Venta', 'IGV', 'Exonerado', 'Otros', 'TOTAL (S/)',
     'Estatus de pago', 'Operación del pago', 'Banco'
   ];
 
@@ -161,8 +180,10 @@ export function exportarReporteCompletoExcel(
   // HOJA 4: REGISTRO DE VENTAS DIARIAS
   // ==========================================
   const headersVentas = [
-    'Fecha', 'Venta Tarjeta (Niubiz/POS)', 'Venta Efectivo', 'Yape / Plin',
-    'Delivery / Apps', 'TOTAL VENTA (S/)', 'Venta Declarada Factura', 'Venta Declarada Boleta', 'Observaciones'
+    'Fecha', 'Venta Tarjeta', 'Venta Efectivo', 'Yape / Plin',
+    'Rappi', 'PedidosYa', 'DiDi Food', 'TOTAL VENTA BRUTA (S/)',
+    '(-) Comisiones Descontadas', '(=) VENTA NETA LÍQUIDA',
+    'Venta Factura', 'Venta Boleta', 'Observaciones'
   ];
 
   const rowsVentas = ventas.map(v => [
@@ -170,16 +191,20 @@ export function exportarReporteCompletoExcel(
     v.tarjeta,
     v.efectivo,
     v.yapePlin || 0,
-    v.deliveryApps || 0,
+    v.rappi || 0,
+    v.pedidosYa || 0,
+    v.didi || 0,
     v.totalVenta,
+    v.totalComisionesDescontadas || 0,
+    v.totalVentaLiquida || v.totalVenta,
     v.ventaDeclaradaFactura || 0,
     v.ventaDeclaradaBoleta || 0,
     v.observaciones || ''
   ]);
 
   const totalVentasSum = ventas.reduce((sum, v) => sum + Number(v.totalVenta || 0), 0);
-  const totalTarjetaSum = ventas.reduce((sum, v) => sum + Number(v.tarjeta || 0), 0);
-  const totalEfectivoSum = ventas.reduce((sum, v) => sum + Number(v.efectivo || 0), 0);
+  const totalComisionesSum = ventas.reduce((sum, v) => sum + Number(v.totalComisionesDescontadas || 0), 0);
+  const totalLiquidasSum = ventas.reduce((sum, v) => sum + Number(v.totalVentaLiquida || v.totalVenta || 0), 0);
 
   const dataVentas = [
     ['REGISTRO DE VENTAS DIARIAS - PUNHSHI S.A.C.'],
@@ -188,15 +213,44 @@ export function exportarReporteCompletoExcel(
     headersVentas,
     ...rowsVentas,
     [],
-    ['TOTALES:', totalTarjetaSum, totalEfectivoSum, '', '', totalVentasSum, '', '', '']
+    ['TOTALES:', '', '', '', '', '', '', totalVentasSum, totalComisionesSum, totalLiquidasSum, '', '', '']
   ];
 
   const wsVentas = XLSX.utils.aoa_to_sheet(dataVentas);
   wsVentas['!cols'] = [
-    { wch: 12 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 16 },
-    { wch: 18 }, { wch: 24 }, { wch: 24 }, { wch: 30 }
+    { wch: 12 }, { wch: 16 }, { wch: 16 }, { wch: 14 },
+    { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 24 },
+    { wch: 24 }, { wch: 24 }, { wch: 16 }, { wch: 16 }, { wch: 30 }
   ];
   XLSX.utils.book_append_sheet(wb, wsVentas, 'Ventas Diarias');
+
+  // ==========================================
+  // HOJA 5: GASTOS ESTRUCTURALES (FIJOS/VARIABLES)
+  // ==========================================
+  if (gastosEstructurales.length > 0) {
+    const headersGastosEst = ['Concepto', 'Categoría', 'Tipo', 'Frecuencia', 'Día Vence', 'Monto (S/)', 'Deduce IGV', 'Estado'];
+    const rowsGastosEst = gastosEstructurales.map(g => [
+      g.nombre,
+      g.categoria,
+      g.tipo,
+      g.frecuencia,
+      g.diaVencimiento || 1,
+      g.monto,
+      g.esDeducibleIGV ? 'SÍ' : 'NO',
+      g.activo ? 'ACTIVO' : 'PAUSADO'
+    ]);
+
+    const dataGastosEst = [
+      ['GASTOS ESTRUCTURALES Y COMPROMISOS PERIÓDICOS - PUNHSHI S.A.C.'],
+      [],
+      headersGastosEst,
+      ...rowsGastosEst
+    ];
+
+    const wsGastosEst = XLSX.utils.aoa_to_sheet(dataGastosEst);
+    wsGastosEst['!cols'] = [{ wch: 30 }, { wch: 25 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, wsGastosEst, 'Gastos Estructurales');
+  }
 
   // Descargar archivo en el navegador
   XLSX.writeFile(wb, nombreArchivo);
