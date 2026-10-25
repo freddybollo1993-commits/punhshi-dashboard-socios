@@ -85,14 +85,94 @@ export default function OCRScannerModal({
     }
   };
 
+  // Pre-procesamiento de imagen en Canvas (Escala, escala de grises y realce de contraste)
+  const preprocessImage = async (file: File): Promise<Blob | File> => {
+    return new Promise((resolve) => {
+      try {
+        const img = new window.Image();
+        const objUrl = URL.createObjectURL(file);
+        img.onload = () => {
+          URL.revokeObjectURL(objUrl);
+          const maxDim = 1600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > maxDim || height > maxDim) {
+            if (width > height) {
+              height = Math.round((height * maxDim) / width);
+              width = maxDim;
+            } else {
+              width = Math.round((width * maxDim) / height);
+              height = maxDim;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(file);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const imgData = ctx.getImageData(0, 0, width, height);
+          const d = imgData.data;
+
+          // Calcular brillo promedio
+          let totalBrightness = 0;
+          for (let i = 0; i < d.length; i += 4) {
+            totalBrightness += (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
+          }
+          const avg = totalBrightness / (d.length / 4);
+
+          // Realzar contraste para impresoras térmicas
+          const contrast = 1.30;
+          const factor = (259 * (contrast * 255 + 255)) / (255 * (259 - contrast * 255));
+
+          for (let i = 0; i < d.length; i += 4) {
+            let g = d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114;
+            g = factor * (g - 128) + 128;
+            if (g < avg * 0.88) {
+              g = Math.max(0, g - 35); // Oscurecer texto impreso
+            } else if (g > avg * 1.05) {
+              g = Math.min(255, g + 30); // Blanquear fondo del papel térmico
+            }
+            d[i] = g;
+            d[i + 1] = g;
+            d[i + 2] = g;
+          }
+
+          ctx.putImageData(imgData, 0, 0);
+          canvas.toBlob((blob) => {
+            resolve(blob || file);
+          }, 'image/jpeg', 0.92);
+        };
+
+        img.onerror = () => {
+          URL.revokeObjectURL(objUrl);
+          resolve(file);
+        };
+        img.src = objUrl;
+      } catch {
+        resolve(file);
+      }
+    });
+  };
+
   // Procesar imagen con Tesseract.js
   const handleImageSelected = async (file: File) => {
     const url = URL.createObjectURL(file);
     setImagenUrl(url);
     setProcesandoOCR(true);
-    setProgresoOCR('Cargando motor de reconocimiento OCR...');
+    setProgresoOCR('Optimizando nitidez y contraste del comprobante...');
 
     try {
+      // 1. Preprocesar en canvas para optimizar detección en papel térmico
+      const processedBlob = await preprocessImage(file);
+
+      setProgresoOCR('Cargando motor de reconocimiento OCR...');
       const { createWorker } = await import('tesseract.js');
       const worker = await createWorker('spa', 1, {
         logger: (m: { status?: string; progress?: number }) => {
@@ -107,8 +187,8 @@ export default function OCRScannerModal({
           }
         }
       });
-      setProgresoOCR('Extrayendo campos del comprobante...');
-      const ret = await worker.recognize(file);
+      setProgresoOCR('Extrayendo serie, correlativo e importes...');
+      const ret = await worker.recognize(processedBlob);
       await worker.terminate();
 
       const parsed: OCRParsedResult = parseReceiptText(ret.data.text);

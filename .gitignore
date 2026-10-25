@@ -29,10 +29,16 @@ yarn-error.log*
 .env*.local
 
 # vercel
+# tesseract
+*.traineddata
+
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tesseract
+*.traineddata
 
 .vercel
