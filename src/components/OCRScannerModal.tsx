@@ -35,6 +35,7 @@ export default function OCRScannerModal({
   const [importeTotal, setImporteTotal] = useState<number | ''>('');
   const [baseImponible, setBaseImponible] = useState<number | ''>('');
   const [montoIGV, setMontoIGV] = useState<number | ''>('');
+  const [tasaIGV, setTasaIGV] = useState<number>(18); // 18%, 10.5% o 0%
   const [esDeducibleIGV, setEsDeducibleIGV] = useState<boolean>(true);
   const [detalleGasto, setDetalleGasto] = useState<string>('');
   const [tipoGasto, setTipoGasto] = useState<string>('Insumos de cocina (verduras, condimentos palta)');
@@ -55,32 +56,78 @@ export default function OCRScannerModal({
 
   if (!isOpen) return null;
 
-  // Actualizar cálculos de IGV automáticamente
+  // Función para recalcular Base Imponible e IGV según tasa
+  const recalcularBaseYIGV = (total: number, tasa: number) => {
+    if (total <= 0) {
+      setBaseImponible('');
+      setMontoIGV('');
+      return;
+    }
+    if (tasa <= 0) {
+      setBaseImponible(total);
+      setMontoIGV(0);
+      return;
+    }
+    const factor = 1 + tasa / 100;
+    const base = parseFloat((total / factor).toFixed(2));
+    const igv = parseFloat((total - base).toFixed(2));
+    setBaseImponible(base);
+    setMontoIGV(igv);
+  };
+
+  // Actualizar cálculos cuando el usuario modifica el Importe Total
   const handleTotalChange = (val: number) => {
     setImporteTotal(val);
-    if (esDeducibleIGV && val > 0) {
-      const base = parseFloat((val / 1.18).toFixed(2));
-      const igv = parseFloat((val - base).toFixed(2));
-      setBaseImponible(base);
-      setMontoIGV(igv);
-    } else {
-      setBaseImponible(val);
-      setMontoIGV(0);
+    recalcularBaseYIGV(val, tasaIGV);
+  };
+
+  // Cambio de tasa de IGV (18%, 10.5% o 0%)
+  const handleTasaChange = (nuevaTasa: number) => {
+    setTasaIGV(nuevaTasa);
+    const totalNum = typeof importeTotal === 'number' ? importeTotal : parseFloat(String(importeTotal)) || 0;
+    recalcularBaseYIGV(totalNum, nuevaTasa);
+  };
+
+  // Edición manual de Base Imponible (auto-calcula IGV = Total - Base)
+  const handleBaseChange = (baseVal: number) => {
+    setBaseImponible(baseVal);
+    const totalNum = typeof importeTotal === 'number' ? importeTotal : parseFloat(String(importeTotal)) || 0;
+    if (totalNum > 0) {
+      const nuevoIGV = parseFloat(Math.max(0, totalNum - baseVal).toFixed(2));
+      setMontoIGV(nuevoIGV);
     }
   };
 
+  // Edición manual de IGV (auto-calcula Base = Total - IGV)
+  const handleIGVChange = (igvVal: number) => {
+    setMontoIGV(igvVal);
+    const totalNum = typeof importeTotal === 'number' ? importeTotal : parseFloat(String(importeTotal)) || 0;
+    if (totalNum > 0) {
+      const nuevaBase = parseFloat(Math.max(0, totalNum - igvVal).toFixed(2));
+      setBaseImponible(nuevaBase);
+    }
+  };
+
+  // Cambio de tipo de comprobante
   const handleTipoComprobanteChange = (tipo: TipoComprobanteCaja) => {
     setTipoComprobante(tipo);
     const deducible = tipo === 'FACTURA';
     setEsDeducibleIGV(deducible);
-    if (importeTotal && typeof importeTotal === 'number') {
-      if (deducible) {
-        const base = parseFloat((importeTotal / 1.18).toFixed(2));
-        setBaseImponible(base);
-        setMontoIGV(parseFloat((importeTotal - base).toFixed(2)));
-      } else {
-        setBaseImponible(importeTotal);
-        setMontoIGV(0);
+    const totalNum = typeof importeTotal === 'number' ? importeTotal : parseFloat(String(importeTotal)) || 0;
+    if (totalNum > 0 && tasaIGV > 0) {
+      recalcularBaseYIGV(totalNum, tasaIGV);
+    }
+  };
+
+  // Cambio de destino (Caja Chica vs Proveedor)
+  const handleDestinoChange = (nuevoDestino: 'CAJA_CHICA' | 'PROVEEDOR') => {
+    setDestino(nuevoDestino);
+    if (nuevoDestino === 'PROVEEDOR') {
+      setTipoComprobante('FACTURA');
+      setEsDeducibleIGV(true);
+      const totalNum = typeof importeTotal === 'number' ? importeTotal : parseFloat(String(importeTotal)) || 0;
+      if (totalNum > 0) {
+        recalcularBaseYIGV(totalNum, tasaIGV > 0 ? tasaIGV : 18);
       }
     }
   };
@@ -193,14 +240,18 @@ export default function OCRScannerModal({
 
       const parsed: OCRParsedResult = parseReceiptText(ret.data.text);
 
-      setTipoComprobante(parsed.tipoComprobante);
+      const esProveedor = destino === 'PROVEEDOR';
+      const tipoDocFinal = esProveedor ? 'FACTURA' : parsed.tipoComprobante;
+      const esDeducibleFinal = esProveedor ? true : parsed.esDeducibleIGV;
+
+      setTipoComprobante(tipoDocFinal);
       setNumeroComprobante(parsed.numeroComprobante);
       setFecha(parsed.fechaEmision);
       setRuc(parsed.rucEmisor);
       setProveedor(parsed.razonSocialEmisor);
       setDetalleGasto(parsed.detalleSugerido);
       setTipoGasto(parsed.tipoGastoSugerido);
-      setEsDeducibleIGV(parsed.esDeducibleIGV);
+      setEsDeducibleIGV(esDeducibleFinal);
       setConfianza(parsed.confianza);
       setAdvertencias(parsed.advertencias);
 
@@ -208,6 +259,7 @@ export default function OCRScannerModal({
         setImporteTotal(parsed.importeTotal);
         setBaseImponible(parsed.baseImponible);
         setMontoIGV(parsed.montoIGV);
+        setTasaIGV(18);
       }
     } catch (err) {
       console.error('Error OCR:', err);
@@ -313,7 +365,7 @@ export default function OCRScannerModal({
             <div className="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-700">
               <button
                 type="button"
-                onClick={() => setDestino('CAJA_CHICA')}
+                onClick={() => handleDestinoChange('CAJA_CHICA')}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
                   destino === 'CAJA_CHICA' 
                     ? 'bg-amber-500 text-slate-950 shadow' 
@@ -324,7 +376,7 @@ export default function OCRScannerModal({
               </button>
               <button
                 type="button"
-                onClick={() => setDestino('PROVEEDOR')}
+                onClick={() => handleDestinoChange('PROVEEDOR')}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
                   destino === 'PROVEEDOR' 
                     ? 'bg-emerald-500 text-slate-950 shadow' 
@@ -606,44 +658,112 @@ export default function OCRScannerModal({
                 </select>
               </div>
 
-              {/* Importes: Total, Base, IGV */}
-              <div className="sm:col-span-2 grid grid-cols-3 gap-2 bg-slate-950/50 p-3 rounded-xl border border-slate-800">
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Importe Total (S/)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={importeTotal}
-                    onChange={(e) => handleTotalChange(parseFloat(e.target.value) || 0)}
-                    className="w-full bg-slate-900 border border-amber-500/50 rounded-lg p-2 text-amber-300 font-bold text-sm focus:ring-1 focus:ring-amber-500 outline-none"
-                    required
-                  />
+              {/* Importes: Total, Base, IGV con Selector de Tasa y Desglose Activo */}
+              <div className="sm:col-span-2 bg-slate-950/60 p-3.5 rounded-xl border border-slate-800 flex flex-col gap-3">
+                
+                {/* Selector rápido de Tasa de IGV */}
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 pb-2.5">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                    Tasa de IGV aplicada:
+                  </span>
+                  <div className="inline-flex rounded-lg bg-slate-900 p-0.5 border border-slate-700/80 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => handleTasaChange(18)}
+                      className={`px-2.5 py-1 rounded-md transition font-semibold ${
+                        tasaIGV === 18
+                          ? 'bg-amber-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      18% General
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTasaChange(10.5)}
+                      className={`px-2.5 py-1 rounded-md transition font-semibold ${
+                        tasaIGV === 10.5
+                          ? 'bg-amber-500 text-slate-950 shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      10.5% Turismo/Rest.
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleTasaChange(0)}
+                      className={`px-2.5 py-1 rounded-md transition font-semibold ${
+                        tasaIGV === 0
+                          ? 'bg-slate-700 text-white shadow'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      0% Exonerado
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Valor Venta (Base)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={baseImponible}
-                    onChange={(e) => setBaseImponible(parseFloat(e.target.value) || 0)}
-                    disabled={!esDeducibleIGV}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-200 text-sm focus:ring-1 focus:ring-amber-500 outline-none"
-                  />
+
+                {/* Grid de 3 campos: Total, Base, IGV (100% editables) */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1 text-[11px]">
+                      Importe Total (S/)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={importeTotal}
+                      onChange={(e) => handleTotalChange(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-900 border border-amber-500/50 rounded-lg p-2 text-amber-300 font-bold text-sm focus:ring-1 focus:ring-amber-500 outline-none"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1 text-[11px]">
+                      Valor Venta / Base (S/)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={baseImponible}
+                      onChange={(e) => handleBaseChange(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-slate-100 font-medium text-sm focus:ring-1 focus:ring-amber-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-400 font-semibold mb-1 text-[11px]">
+                      Crédito IGV ({tasaIGV}%) (S/)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={montoIGV}
+                      onChange={(e) => handleIGVChange(parseFloat(e.target.value) || 0)}
+                      className="w-full bg-slate-800 border border-emerald-500/40 rounded-lg p-2 text-emerald-400 font-bold text-sm focus:ring-1 focus:ring-emerald-500 outline-none"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-slate-400 font-semibold mb-1">Crédito IGV (18%)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={montoIGV}
-                    onChange={(e) => setMontoIGV(parseFloat(e.target.value) || 0)}
-                    disabled={!esDeducibleIGV}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-emerald-400 font-semibold text-sm focus:ring-1 focus:ring-amber-500 outline-none"
-                  />
+
+                {/* Checkbox deducible de IGV */}
+                <div className="pt-1 flex items-center justify-between border-t border-slate-800/60">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={esDeducibleIGV}
+                      onChange={(e) => setEsDeducibleIGV(e.target.checked)}
+                      className="rounded text-emerald-500 focus:ring-emerald-500 bg-slate-900 border-slate-700 w-4 h-4 cursor-pointer"
+                    />
+                    <span className={`text-xs font-semibold ${esDeducibleIGV ? 'text-emerald-400' : 'text-slate-400'}`}>
+                      {esDeducibleIGV
+                        ? '✓ Comprobante con Crédito Fiscal (Deduce pago de IGV ante SUNAT)'
+                        : 'Control Interno / Gasto Real (Sin Crédito Fiscal SUNAT)'}
+                    </span>
+                  </label>
                 </div>
+
               </div>
 
               {/* Detalle del Gasto */}

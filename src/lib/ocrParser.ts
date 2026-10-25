@@ -210,15 +210,39 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
     }
   }
 
+  // 5.1 Extracción o cálculo inteligente de IGV y Base Imponible
   let baseImponible = 0;
   let montoIGV = 0;
 
-  if (esDeducibleIGV && importeTotal > 0) {
-    baseImponible = parseFloat((importeTotal / 1.105).toFixed(2));
-    montoIGV = parseFloat((importeTotal - baseImponible).toFixed(2));
-  } else {
-    baseImponible = importeTotal;
-    montoIGV = 0;
+  // Intento 1: Buscar línea explícita de IGV e Impuestos en el ticket
+  const igvMatch = text.match(/(?:I\.?G\.?V\.?|IMPUESTO)\s*(?:\(?\s*\d+(?:[\.,]\d+)?\s*%\s*\)?)?\s*[:=\s]*(?:S\/\s*|\$\/\s*|PEN\s*)?([0-9]+(?:[\.,][0-9]{2})?)/i);
+  const baseMatch = text.match(/(?:OP\.?\s*GRAVADA|GRAVADA|BASE\s*IMPONIBLE|SUBTOTAL|VALOR\s*VENTA)\s*[:=\s]*(?:S\/\s*|\$\/\s*|PEN\s*)?([0-9]+(?:[\.,][0-9]{2})?)/i);
+
+  if (igvMatch) {
+    const parsedIGV = parseFloat(igvMatch[1].replace(',', '.'));
+    if (parsedIGV > 0 && parsedIGV < (importeTotal > 0 ? importeTotal : 100000)) {
+      montoIGV = parsedIGV;
+    }
+  }
+
+  if (baseMatch) {
+    const parsedBase = parseFloat(baseMatch[1].replace(',', '.'));
+    if (parsedBase > 0 && parsedBase <= (importeTotal > 0 ? importeTotal : 100000)) {
+      baseImponible = parsedBase;
+    }
+  }
+
+  // Intento 2: Si no vino impreso explícitamente o es 0, desglosar matemáticamente desde el importe total
+  if (importeTotal > 0) {
+    if (montoIGV <= 0 && baseImponible <= 0) {
+      // Estándar comercial de compras e insumos (18% IGV)
+      baseImponible = parseFloat((importeTotal / 1.18).toFixed(2));
+      montoIGV = parseFloat((importeTotal - baseImponible).toFixed(2));
+    } else if (montoIGV > 0 && baseImponible <= 0) {
+      baseImponible = parseFloat((importeTotal - montoIGV).toFixed(2));
+    } else if (baseImponible > 0 && montoIGV <= 0) {
+      montoIGV = parseFloat((importeTotal - baseImponible).toFixed(2));
+    }
   }
 
   // 6. Detección Inteligente del Proveedor y Categoría
