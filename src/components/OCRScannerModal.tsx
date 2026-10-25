@@ -4,7 +4,7 @@
 import React, { useState, useRef } from 'react';
 import { Camera, Upload, CheckCircle2, AlertTriangle, RefreshCw, X, ShieldCheck } from 'lucide-react';
 import { parseReceiptText, OCRParsedResult } from '@/lib/ocrParser';
-import { MovimientoCajaChica, FacturaProveedor, TipoComprobanteCaja } from '@/types';
+import { MovimientoCajaChica, FacturaProveedor, TipoComprobanteCaja, MedioPagoGasto } from '@/types';
 import { getCategoriasGastos, getMaestroProveedores } from '@/lib/storage';
 
 interface OCRScannerModalProps {
@@ -37,6 +37,9 @@ export default function OCRScannerModal({
   const [montoIGV, setMontoIGV] = useState<number | ''>('');
   const [tasaIGV, setTasaIGV] = useState<number>(18); // 18%, 10.5% o 0%
   const [esDeducibleIGV, setEsDeducibleIGV] = useState<boolean>(true);
+  const [medioPago, setMedioPago] = useState<MedioPagoGasto>('TRANSFERENCIA');
+  const [sujetoADetraccion, setSujetoADetraccion] = useState<boolean>(false);
+  const [montoDetraccion, setMontoDetraccion] = useState<number | ''>('');
   const [detalleGasto, setDetalleGasto] = useState<string>('');
   const [tipoGasto, setTipoGasto] = useState<string>('Insumos de cocina (verduras, condimentos palta)');
   const [observaciones, setObservaciones] = useState<string>('');
@@ -280,6 +283,9 @@ export default function OCRScannerModal({
       return;
     }
 
+    const esBancarizado = medioPago !== 'EFECTIVO';
+    const alertaBancarizacion = totalNum >= 2000 && !esBancarizado;
+
     if (destino === 'CAJA_CHICA') {
       onSaveCajaChica({
         fecha,
@@ -291,9 +297,13 @@ export default function OCRScannerModal({
         detalleGasto: detalleGasto || 'Gasto operativo de tienda',
         tipoGasto,
         observaciones: observaciones || (confianza > 0 ? `Validado vía OCR (${confianza}%)` : 'Registro Manual'),
-        esDeducibleIGV,
+        esDeducibleIGV: alertaBancarizacion ? false : esDeducibleIGV,
+        esDeducibleRenta: !alertaBancarizacion && (tipoComprobante === 'FACTURA' || tipoComprobante === 'BOLETA' || tipoComprobante === 'RECIBO POR HONORARIOS' || tipoComprobante === 'SERVICIOS PUBLICOS'),
         baseImponible: Number(baseImponible) || (esDeducibleIGV ? totalNum / 1.18 : totalNum),
         montoIGV: Number(montoIGV) || (esDeducibleIGV ? totalNum - (totalNum / 1.18) : 0),
+        tasaIGVAplicada: tasaIGV,
+        medioPago,
+        alertaBancarizacion,
         fotoUrl: imagenUrl || undefined,
         estadoValidacion: 'VALIDADO',
         origenOCR: Boolean(imagenUrl && !modoManual)
@@ -311,12 +321,17 @@ export default function OCRScannerModal({
         moneda: 'PEN',
         valorVenta: Number(baseImponible) || (totalNum / 1.18),
         igv: Number(montoIGV) || (totalNum - (totalNum / 1.18)),
+        tasaIGVAplicada: tasaIGV,
         exonerado: 0,
         otros: 0,
         total: totalNum,
         estatusPago,
         banco,
+        medioPago,
         operacionPago: operacionPago || undefined,
+        alertaBancarizacion,
+        sujetoADetraccion,
+        montoDetraccion: Number(montoDetraccion) || 0,
         fotoUrl: imagenUrl || undefined
       });
     }
@@ -517,6 +532,19 @@ export default function OCRScannerModal({
             onSubmit={handleGuardar} 
             className={`${modoManual ? 'lg:col-span-12' : 'lg:col-span-7'} flex flex-col gap-4`}
           >
+            {/* Alerta de Bancarización en tiempo real */}
+            {Number(importeTotal || 0) >= 2000 && medioPago === 'EFECTIVO' && (
+              <div className="p-3 rounded-xl border border-rose-600/80 bg-rose-950/70 text-rose-200 text-xs flex items-center gap-2.5">
+                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <strong className="block font-bold text-rose-300">⚠️ Riesgo de Reparo SUNAT: Candado de Bancarización (Ley 28194)</strong>
+                  <span className="text-[11px] text-rose-300/90">
+                    Compras iguales o mayores a S/ 2,000 pagadas en efectivo pierden el Crédito Fiscal de IGV y SUNAT las considera No Deducibles de Renta. Selecciona Transferencia o Tarjeta para proteger el gasto.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Live Arithmetic & Fiscal Check Banner */}
             <div className={`p-3 rounded-xl border flex items-center gap-3 text-xs ${
               isMathValid && esDeducibleIGV
@@ -567,13 +595,33 @@ export default function OCRScannerModal({
                 <select
                   value={tipoComprobante}
                   onChange={(e) => handleTipoComprobanteChange(e.target.value as TipoComprobanteCaja)}
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-amber-500 outline-none"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-amber-500 outline-none text-xs"
                 >
-                  <option value="FACTURA">FACTURA (Con Crédito Fiscal)</option>
-                  <option value="BOLETA">BOLETA (Sin Crédito Fiscal)</option>
-                  <option value="GUIA">GUÍA / S/N (Movilidad/Mercado)</option>
-                  <option value="NOTA DE VENTA">NOTA DE VENTA (No Fiscal)</option>
-                  <option value="RECIBO">RECIBO POR HONORARIOS / OTRO</option>
+                  <option value="FACTURA">FACTURA (Crédito IGV + Deducible Renta)</option>
+                  <option value="SERVICIOS PUBLICOS">RECIBO SERV. PÚBLICOS (Luz/Agua con IGV)</option>
+                  <option value="BOLETA">BOLETA (Nuevo RUS - Deducible Renta tope 6%)</option>
+                  <option value="RECIBO POR HONORARIOS">RECIBO POR HONORARIOS (RHE 4ta Cat - Deducible Renta)</option>
+                  <option value="LIQUIDACION DE COMPRA">LIQUIDACIÓN DE COMPRA (Acopiador - Deducible Renta)</option>
+                  <option value="FORMULARIO 1683">FORMULARIO 1683 (Alquiler Natural - Deducible Renta)</option>
+                  <option value="NOTA DE VENTA">NOTA DE VENTA (No Deducible / Control Interno)</option>
+                  <option value="GUIA">GUÍA / S/N (Movilidad/Mercado No Deducible)</option>
+                  <option value="RECIBO">RECIBO SIMPLE (Gasto No Deducible)</option>
+                </select>
+              </div>
+
+              {/* Medio de Pago & Bancarización */}
+              <div>
+                <label className="block text-slate-300 font-semibold mb-1">Medio de Pago</label>
+                <select
+                  value={medioPago}
+                  onChange={(e) => setMedioPago(e.target.value as MedioPagoGasto)}
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-white focus:ring-1 focus:ring-amber-500 outline-none text-xs"
+                >
+                  <option value="TRANSFERENCIA">Transferencia Bancaria (Bancarizado OK)</option>
+                  <option value="TARJETA">Tarjeta Corporativa (Bancarizado OK)</option>
+                  <option value="YAPE_PLIN">Yape / Plin Empresarial (Bancarizado OK)</option>
+                  <option value="CHEQUE">Cheque de Gerencia (Bancarizado OK)</option>
+                  <option value="EFECTIVO">Efectivo en Caja</option>
                 </select>
               </div>
 
@@ -819,6 +867,41 @@ export default function OCRScannerModal({
                       />
                     </div>
                   )}
+
+                  {/* Detracción SPOT (Servicios >= S/ 700) */}
+                  <div className="sm:col-span-2 p-3 bg-slate-950/40 rounded-xl border border-slate-800 flex flex-col gap-2">
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={sujetoADetraccion}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSujetoADetraccion(checked);
+                          if (checked && !montoDetraccion && importeTotal) {
+                            setMontoDetraccion(Number((Number(importeTotal) * 0.10).toFixed(2)));
+                          }
+                        }}
+                        className="rounded text-amber-500 focus:ring-amber-500 bg-slate-900 border-slate-700 w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xs font-semibold text-slate-300">
+                        Sujeto a Detracción SPOT Banco de la Nación (Servicios $\ge$ S/ 700)
+                      </span>
+                    </label>
+                    {sujetoADetraccion && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <label className="text-[11px] text-slate-400 font-semibold">Monto Detracción (S/):</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={montoDetraccion}
+                          onChange={(e) => setMontoDetraccion(parseFloat(e.target.value) || '')}
+                          className="w-32 bg-slate-800 border border-slate-700 rounded-lg p-1.5 text-amber-300 font-bold text-xs focus:ring-1 focus:ring-amber-500 outline-none"
+                        />
+                        <span className="text-[11px] text-slate-500">(Normalmente 10% o 12% a depositar en cuenta BN)</span>
+                      </div>
+                    )}
+                  </div>
                 </>
               )}
 

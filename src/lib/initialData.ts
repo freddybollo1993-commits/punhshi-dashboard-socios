@@ -9,12 +9,14 @@ import {
 } from '@/types';
 
 export const CONFIGURACION_DEFAULT: ConfiguracionFinanciera = {
-  tasaIGV: 10.5, // Tasa reducida de IGV Ley 31556 para Restaurantes y Hoteles / Turismo
+  tasaIGV: 10.5, // Tasa reducida de IGV Ley 31556 para Restaurantes en Ventas
+  tasaIGVCompras: 18.0, // Tasa estándar de compras a proveedores comerciales
   comisionPOS: 3.5, // Niubiz / Izipay aproximado
   comisionRappi: 18.0, // Comisión Rappi
   comisionPedidosYa: 18.0, // Comisión PedidosYa
   comisionDidi: 15.0, // Comisión DiDi Food
-  tasaPagoCuentaRenta: 1.5 // Régimen MYPE / General
+  tasaPagoCuentaRenta: 1.0, // Régimen MYPE Tributario (1.0% mensual para ventas < 300 UIT)
+  uitVigente: 5350 // UIT vigente del ejercicio
 };
 
 export const CATEGORIAS_GASTOS_DEFAULT: string[] = [

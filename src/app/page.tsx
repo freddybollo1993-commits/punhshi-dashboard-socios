@@ -16,7 +16,8 @@ import {
   RotateCcw,
   Plus,
   Wallet,
-  Settings
+  Settings,
+  AlertCircle
 } from 'lucide-react';
 
 import { 
@@ -414,7 +415,7 @@ export default function DashboardSociosPage() {
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-5 relative overflow-hidden group hover:border-slate-700 transition shadow-sm">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                    Impuestos SUNAT ({config.tasaIGV}% IGV)
+                    Liquidación SUNAT (RMT)
                   </span>
                   <div className="p-2 rounded-xl bg-purple-500/10 text-purple-400">
                     <Receipt className="w-4 h-4" />
@@ -424,10 +425,8 @@ export default function DashboardSociosPage() {
                   S/ {resumenFiscal.totalImpuestosEstimados.toLocaleString('es-PE', { minimumFractionDigits: 2 })}
                 </div>
                 <div className="mt-2 text-xs flex items-center justify-between text-slate-400">
-                  <span>IGV por pagar:</span>
-                  <span className="font-semibold text-slate-200">
-                    S/ {resumenFiscal.igvEstimadoAPagar.toFixed(2)}
-                  </span>
+                  <span>IGV ({resumenFiscal.tasaIGVVentasAplicada}%): <strong className="text-slate-200">S/ {resumenFiscal.igvEstimadoAPagar.toFixed(2)}</strong></span>
+                  <span>Renta ({config.tasaPagoCuentaRenta || 1.0}%): <strong className="text-slate-200">S/ {resumenFiscal.pagoCuentaRentaEstimado.toFixed(2)}</strong></span>
                 </div>
               </div>
 
@@ -552,52 +551,114 @@ export default function DashboardSociosPage() {
                 </div>
               </div>
 
-              {/* Fiscal SUNAT Thermometer (4 Cols) */}
+              {/* Fiscal SUNAT Thermometer: Doble Escudo Fiscal (4 Cols) */}
               <div className="lg:col-span-4 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white flex items-center gap-2 mb-1">
-                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    Semáforo de Salud Fiscal SUNAT
-                  </h3>
+                  <div className="flex items-center justify-between mb-1">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                      Semáforo de Salud Fiscal SUNAT
+                    </h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 font-mono border border-purple-500/20">
+                      RMT (PUNHSHI S.A.C.)
+                    </span>
+                  </div>
                   <p className="text-xs text-slate-400 mb-4">
-                    Balance entre Ventas Declaradas vs Compras con Factura
+                    Auditoría del Doble Escudo: IGV Mensual vs Renta Anual
                   </p>
 
                   <div className="space-y-3 text-xs">
-                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex justify-between items-center">
-                      <span className="text-slate-400">Débito Fiscal (IGV Ventas):</span>
-                      <span className="font-bold text-rose-400">
-                        S/ {resumenFiscal.igvDebitoFiscal.toFixed(2)}
-                      </span>
+                    
+                    {/* Bloque 1: Escudo Mensual de IGV */}
+                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
+                      <div className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex justify-between">
+                        <span>1. Liquidación Mensual de IGV</span>
+                        <span>PDT 621</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Débito Fiscal Ventas ({resumenFiscal.tasaIGVVentasAplicada}%):</span>
+                        <span className="font-bold text-rose-400">
+                          S/ {resumenFiscal.igvDebitoFiscal.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Crédito Fiscal Compras ({config.tasaIGVCompras || 18}%):</span>
+                        <span className="font-bold text-emerald-400">
+                          -S/ {resumenFiscal.totalCreditoFiscalIGV.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="pt-1.5 border-t border-slate-800/80 flex justify-between items-center font-bold">
+                        <span className="text-slate-200">
+                          {resumenFiscal.igvEstimadoAPagar > 0 ? 'IGV a Pagar en Mes:' : 'Saldo a Favor Acumulado:'}
+                        </span>
+                        <span className={resumenFiscal.igvEstimadoAPagar > 0 ? 'text-rose-400' : 'text-emerald-400'}>
+                          S/ {(resumenFiscal.igvEstimadoAPagar > 0 ? resumenFiscal.igvEstimadoAPagar : resumenFiscal.saldoAFavorIGV).toFixed(2)}
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex justify-between items-center">
-                      <span className="text-slate-400">Crédito Fiscal (IGV Compras):</span>
-                      <span className="font-bold text-emerald-400">
-                        S/ {resumenFiscal.totalCreditoFiscalIGV.toFixed(2)}
-                      </span>
+                    {/* Bloque 2: Escudo Anual de Renta */}
+                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
+                      <div className="text-[11px] font-bold text-purple-400 uppercase tracking-wider flex justify-between">
+                        <span>2. Impuesto a la Renta (RMT)</span>
+                        <span>1.0% pago a cta.</span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Pago a Cuenta Mensual (1.0%):</span>
+                        <span className="font-bold text-purple-300">
+                          S/ {resumenFiscal.pagoCuentaRentaEstimado.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Boletas RUS Deducibles (tope 6%):</span>
+                        <span className="font-bold text-slate-200">
+                          S/ {resumenFiscal.boletasRUSDeduciblesRenta.toFixed(2)} <span className="text-[10px] text-slate-500 font-normal">/ max S/ {resumenFiscal.topeDeduccionBoletasRUS.toFixed(0)}</span>
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center text-slate-300">
+                        <span>Provisión Renta Anual Sugerida:</span>
+                        <span className="font-bold text-amber-300">
+                          S/ {resumenFiscal.provisionMensualRentaAnual.toFixed(2)} / mes
+                        </span>
+                      </div>
                     </div>
 
-                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex justify-between items-center">
-                      <span className="text-slate-400">Pago a Cuenta Renta (1.5%):</span>
-                      <span className="font-bold text-purple-300">
-                        S/ {resumenFiscal.pagoCuentaRentaEstimado.toFixed(2)}
-                      </span>
-                    </div>
-
-                    <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 flex justify-between items-center">
-                      <span className="text-slate-400">Escudo Fiscal (Compras/Ventas):</span>
+                    {/* Ratio Global de Escudo */}
+                    <div className="p-2.5 rounded-xl bg-slate-950/40 border border-slate-800 flex justify-between items-center">
+                      <span className="text-slate-400 font-medium">Cobertura de Facturas s/ Ventas:</span>
                       <span className={`font-bold ${
                         resumenFiscal.ratioEscudoFiscal >= 70 ? 'text-emerald-400' : 'text-amber-400'
                       }`}>
                         {resumenFiscal.ratioEscudoFiscal.toFixed(1)}%
                       </span>
                     </div>
+
                   </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400 bg-slate-950/30 p-2.5 rounded-lg">
-                  💡 <strong>Tip para el Socio:</strong> Gastos de caja chica en boletas y guías suman <strong>S/ {resumenFiscal.gastosSinCreditoFiscal.toFixed(2)}</strong>. Solicitar factura en esos consumos aumentaría el crédito fiscal de IGV.
+                {/* Alerta de Costo Oculto de la Informalidad & Bancarización */}
+                <div className="mt-4 pt-3 border-t border-slate-800 space-y-2 text-[11px]">
+                  {resumenFiscal.comprasNoBancarizadasAlerta > 0 && (
+                    <div className="bg-rose-950/60 border border-rose-800 text-rose-200 p-2.5 rounded-lg flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-400 mt-0.5 shrink-0" />
+                      <div>
+                        <strong>Alerta Bancarización (Ley 28194):</strong> Compras por <strong>S/ {resumenFiscal.comprasNoBancarizadasAlerta.toFixed(2)}</strong> (&ge; S/ 2,000 en efectivo) arriesgan reparo tributario.
+                      </div>
+                    </div>
+                  )}
+
+                  {resumenFiscal.costoOcultoInformalidad > 0 ? (
+                    <div className="bg-amber-950/40 border border-amber-800 text-amber-200 p-2.5 rounded-lg flex items-start gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
+                      <div>
+                        <strong>Costo Oculto de Compras sin Factura:</strong> La informalidad de <strong>S/ {resumenFiscal.gastosNoDeduciblesReparos.toFixed(2)}</strong> le costará a PUNHSHI S.A.C. <strong>S/ {resumenFiscal.costoOcultoInformalidad.toFixed(2)}</strong> de sobrecosto en Impuesto a la Renta (29.5%).
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-slate-400 bg-slate-950/30 p-2.5 rounded-lg">
+                      💡 <strong>Tip Tributario Gastronómico:</strong> El 100% de tus compras cuentan con factura bancarizada o boleta bajo el límite del 6% del RUS, maximizando el escudo fiscal.
+                    </div>
+                  )}
                 </div>
               </div>
 

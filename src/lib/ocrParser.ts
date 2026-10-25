@@ -1,5 +1,7 @@
+import { TipoComprobanteCaja } from '@/types';
+
 export interface OCRParsedResult {
-  tipoComprobante: 'FACTURA' | 'BOLETA' | 'GUIA' | 'NOTA DE VENTA' | 'RECIBO' | 'OTRO';
+  tipoComprobante: TipoComprobanteCaja;
   numeroComprobante: string;
   rucEmisor: string;
   razonSocialEmisor: string;
@@ -8,6 +10,8 @@ export interface OCRParsedResult {
   baseImponible: number;
   montoIGV: number;
   esDeducibleIGV: boolean;
+  esDeducibleRenta: boolean;
+  alertaBancarizacion: boolean;
   confianza: number; // 0 - 100
   detalleSugerido: string;
   tipoGastoSugerido: string;
@@ -118,28 +122,51 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
   const rucMatch = text.match(/\b(10\d{9}|20\d{9})\b/);
   const rucEmisor = rucMatch ? rucMatch[1] : '';
 
-  // 2. Tipo de Comprobante
+  // 2. Tipo de Comprobante y Doble Escudo Fiscal (IGV Mensual vs Renta Anual)
   let tipoComprobante: OCRParsedResult['tipoComprobante'] = 'BOLETA';
   let esDeducibleIGV = false;
+  let esDeducibleRenta = false;
 
   if (text.includes('FACTURA') || text.includes('FACTURA ELECTR') || /\b[F][A-Z0-9]{3}[-\s:]\d+/.test(text)) {
     tipoComprobante = 'FACTURA';
     esDeducibleIGV = true;
+    esDeducibleRenta = true;
+  } else if (text.includes('HONORARIOS') || text.includes('RHE') || text.includes('4TA CATEGORIA') || text.includes('CUARTA CATEGORIA')) {
+    tipoComprobante = 'RECIBO POR HONORARIOS';
+    esDeducibleIGV = false;
+    esDeducibleRenta = true;
+  } else if (text.includes('ENOSA') || text.includes('SEDAPAL') || text.includes('LUZ DEL SUR') || text.includes('SERVICIO DE LUZ') || text.includes('SUMINISTRO') || text.includes('TELEFONICA') || text.includes('CLARO') || text.includes('ENTEL')) {
+    tipoComprobante = 'SERVICIOS PUBLICOS';
+    esDeducibleIGV = true;
+    esDeducibleRenta = true;
+  } else if (text.includes('LIQUIDACION DE COMPRA') || text.includes('LIQUIDACIÓN DE COMPRA')) {
+    tipoComprobante = 'LIQUIDACION DE COMPRA';
+    esDeducibleIGV = false;
+    esDeducibleRenta = true;
+  } else if (text.includes('1683') || text.includes('ARRENDAMIENTO')) {
+    tipoComprobante = 'FORMULARIO 1683';
+    esDeducibleIGV = false;
+    esDeducibleRenta = true;
   } else if (text.includes('BOLETA') || text.includes('BOLETA DE VENTA') || /\b[B][A-Z0-9]{3}[-\s:]\d+/.test(text)) {
     tipoComprobante = 'BOLETA';
     esDeducibleIGV = false;
+    esDeducibleRenta = true; // Deducible para Renta bajo tope del 6% del Nuevo RUS (Art. 37 inc. z LIR)
   } else if (text.includes('GUIA') || text.includes('GUÍA') || text.includes('REMISIÓN')) {
     tipoComprobante = 'GUIA';
     esDeducibleIGV = false;
+    esDeducibleRenta = false;
   } else if (text.includes('NOTA DE VENTA') || text.includes('TICKET NO FISCAL')) {
     tipoComprobante = 'NOTA DE VENTA';
     esDeducibleIGV = false;
+    esDeducibleRenta = false;
   } else if (text.includes('RECIBO')) {
     tipoComprobante = 'RECIBO';
     esDeducibleIGV = false;
+    esDeducibleRenta = false;
   } else {
     tipoComprobante = 'BOLETA';
     esDeducibleIGV = false;
+    esDeducibleRenta = true;
   }
 
   // 3. Número de Comprobante (Serie - Correlativo completo, soportando hasta 12 dígitos)
@@ -333,7 +360,13 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
     tipoGastoSugerido = 'Alimentación de personal';
   }
 
-  // 7. Confianza estimada
+  // 7. Candado de Bancarización (Ley 28194: Montos >= S/ 2,000 deben pagarse por banco)
+  const alertaBancarizacion = importeTotal >= 2000;
+  if (alertaBancarizacion) {
+    advertencias.push('⚠️ Candado de Bancarización (Ley 28194): Importe igual o mayor a S/ 2,000. Debe pagarse con transferencia bancaria, cheque o tarjeta corporativa con número de operación para no perder el crédito fiscal ni la deducción de Renta.');
+  }
+
+  // 8. Confianza estimada
   let confianza = 35;
   if (rucEmisor) confianza += 20;
   if (numeroComprobante !== 'S/N') confianza += 25;
@@ -345,7 +378,9 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
   }
 
   if (tipoComprobante === 'BOLETA') {
-    advertencias.push('Comprobante tipo Boleta de Venta: Registra salida real de dinero de caja chica sin crédito fiscal de IGV.');
+    advertencias.push('Comprobante tipo Boleta de Venta: No genera Crédito Fiscal de IGV mensual, pero sí deduce Renta Anual hasta el límite del 6% de compras con factura (Nuevo RUS).');
+  } else if (tipoComprobante === 'RECIBO POR HONORARIOS') {
+    advertencias.push('Recibo por Honorarios Electrónico (4ta Categoría): 100% deducible para Impuesto a la Renta Anual. Validar retención del 8% si supera S/ 1,500.');
   }
 
   if (importeTotal === 0) {
@@ -362,6 +397,8 @@ export function parseReceiptText(rawText: string): OCRParsedResult {
     baseImponible,
     montoIGV,
     esDeducibleIGV,
+    esDeducibleRenta,
+    alertaBancarizacion,
     confianza: Math.min(100, confianza),
     detalleSugerido,
     tipoGastoSugerido,

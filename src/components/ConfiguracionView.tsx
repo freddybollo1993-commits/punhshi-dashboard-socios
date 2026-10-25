@@ -41,12 +41,14 @@ export default function ConfiguracionView({
   onLimpiarDatos
 }: ConfiguracionViewProps) {
   // Config form state
-  const [tasaIGV, setTasaIGV] = useState(config.tasaIGV);
+  const [tasaIGV, setTasaIGV] = useState(config.tasaIGV || 10.5);
+  const [tasaIGVCompras, setTasaIGVCompras] = useState(config.tasaIGVCompras || 18.0);
   const [comisionPOS, setComisionPOS] = useState(config.comisionPOS);
   const [comisionRappi, setComisionRappi] = useState(config.comisionRappi);
   const [comisionPedidosYa, setComisionPedidosYa] = useState(config.comisionPedidosYa);
   const [comisionDidi, setComisionDidi] = useState(config.comisionDidi);
-  const [tasaPagoCuentaRenta, setTasaPagoCuentaRenta] = useState(config.tasaPagoCuentaRenta);
+  const [tasaPagoCuentaRenta, setTasaPagoCuentaRenta] = useState(config.tasaPagoCuentaRenta || 1.0);
+  const [uitVigente, setUitVigente] = useState(config.uitVigente || 5350);
   const [mensajeGuardado, setMensajeGuardado] = useState(false);
 
   // New Gasto Estructural form state
@@ -63,11 +65,13 @@ export default function ConfiguracionView({
     e.preventDefault();
     const updated: ConfiguracionFinanciera = {
       tasaIGV: Number(tasaIGV) || 10.5,
+      tasaIGVCompras: Number(tasaIGVCompras) || 18.0,
       comisionPOS: Number(comisionPOS) || 0,
       comisionRappi: Number(comisionRappi) || 0,
       comisionPedidosYa: Number(comisionPedidosYa) || 0,
       comisionDidi: Number(comisionDidi) || 0,
-      tasaPagoCuentaRenta: Number(tasaPagoCuentaRenta) || 1.5
+      tasaPagoCuentaRenta: Number(tasaPagoCuentaRenta) || 1.0,
+      uitVigente: Number(uitVigente) || 5350
     };
     saveConfiguracion(updated);
     onConfigUpdated(updated);
@@ -155,21 +159,21 @@ export default function ConfiguracionView({
 
         <form onSubmit={handleSaveConfig} className="space-y-5 text-xs">
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             
-            {/* Tasa IGV */}
+            {/* Tasa IGV Ventas (Restaurante) */}
             <div className="bg-slate-950/60 p-4 rounded-xl border border-amber-500/30 relative">
               <div className="flex items-center justify-between mb-1">
                 <label className="text-slate-200 font-bold flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-amber-400" />
-                  % Tasa de IGV
+                  % IGV Ventas
                 </label>
                 <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">
-                  Ley Turismo: 10.5%
+                  Ley 31556: 10.5%
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 mb-2.5">
-                Régimen especial para restaurantes o general (18.0%).
+                Tasa especial reducida en ventas de alimentos y salón.
               </p>
               <div className="relative">
                 <input
@@ -183,6 +187,90 @@ export default function ConfiguracionView({
                   required
                 />
                 <span className="absolute right-3 top-2.5 text-slate-400 font-bold">%</span>
+              </div>
+            </div>
+
+            {/* Tasa IGV Compras Estándar */}
+            <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-200 font-bold block">
+                  % IGV Compras
+                </label>
+                <span className="text-[10px] bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded font-mono">
+                  General: 18.0%
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mb-2.5">
+                Tasa estándar que facturan proveedores (bebidas, luz, insumos).
+              </p>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="30"
+                  value={tasaIGVCompras}
+                  onChange={(e) => setTasaIGVCompras(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-extrabold text-sm focus:border-amber-500 outline-none pr-8"
+                  required
+                />
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">%</span>
+              </div>
+            </div>
+
+            {/* Pago a Cuenta Renta */}
+            <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-200 font-bold block">
+                  % Pago a Cuenta Renta
+                </label>
+                <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded font-mono">
+                  RMT: 1.0%
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mb-2.5">
+                Cuota mensual RMT (1.0% ventas &lt; 300 UIT).
+              </p>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="10"
+                  value={tasaPagoCuentaRenta}
+                  onChange={(e) => setTasaPagoCuentaRenta(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-extrabold text-sm focus:border-amber-500 outline-none pr-8"
+                  required
+                />
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">%</span>
+              </div>
+            </div>
+
+            {/* UIT Vigente */}
+            <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-slate-200 font-bold block">
+                  Valor UIT Vigente
+                </label>
+                <span className="text-[10px] bg-slate-700 text-slate-300 px-2 py-0.5 rounded font-mono">
+                  SUNAT
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mb-2.5">
+                Para topes de boletas RUS (200 UIT) y tramos RMT (15 UIT).
+              </p>
+              <div className="relative">
+                <input
+                  type="number"
+                  step="50"
+                  min="1000"
+                  max="10000"
+                  value={uitVigente}
+                  onChange={(e) => setUitVigente(parseFloat(e.target.value) || 0)}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-extrabold text-sm focus:border-amber-500 outline-none pr-10"
+                  required
+                />
+                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">S/</span>
               </div>
             </div>
 
@@ -271,29 +359,6 @@ export default function ConfiguracionView({
                   max="40"
                   value={comisionDidi}
                   onChange={(e) => setComisionDidi(parseFloat(e.target.value) || 0)}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-extrabold text-sm focus:border-amber-500 outline-none pr-8"
-                  required
-                />
-                <span className="absolute right-3 top-2.5 text-slate-400 font-bold">%</span>
-              </div>
-            </div>
-
-            {/* Pago a Cuenta Renta */}
-            <div className="bg-slate-950/60 p-4 rounded-xl border border-slate-800">
-              <label className="text-slate-200 font-bold block mb-1">
-                % Pago a Cuenta Renta SUNAT
-              </label>
-              <p className="text-[11px] text-slate-400 mb-2.5">
-                Tasa mensual de pago a cuenta (ej: 1.5% o 1.0%).
-              </p>
-              <div className="relative">
-                <input
-                  type="number"
-                  step="0.1"
-                  min="0"
-                  max="10"
-                  value={tasaPagoCuentaRenta}
-                  onChange={(e) => setTasaPagoCuentaRenta(parseFloat(e.target.value) || 0)}
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-white font-extrabold text-sm focus:border-amber-500 outline-none pr-8"
                   required
                 />
